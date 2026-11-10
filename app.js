@@ -38,7 +38,7 @@ const BOOT = [
  ["NEON//BIOS v11.0 mobil  (c) 2026", ""], ["11 beceri çekirdeği ..................", "ok"],
  ["Binance public API hattı .............", "ok"], ["CoinGecko analist modülü .............", "ok"],
  ["Zaman makinesi worker'ı ..............", "ok"], ["7/24 kripto seans adaptörü ...........", "ok"],
- ["Emir motoru ................. KAĞIT MOD", "warn"], ["Cüzdan erişimi .............. YOK", "warn"],
+ ["Canlı akış (WebSocket) ................", "ok"], ["Emir motoru ........ YALNIZ ONAYLA İLE", "warn"], ["Cüzdan ......... YALNIZ SEN BAĞLARSAN", "warn"],
  ["Sistem hazır. Bir coin yaz ve Enter'a bas.", ""],
 ];
 async function boot(){
@@ -123,7 +123,7 @@ function panelFail(sel, step){ const p = document.querySelector(sel); p.classLis
 function render(d, steps){
   CUR = d; const D = d.data;
   $("#progress").classList.add("hidden"); $("#dash").classList.remove("hidden");
-  document.querySelectorAll(".panel").forEach(p => { p.classList.remove("show","failed"); });
+  document.querySelectorAll(".grid .panel").forEach(p => { p.classList.remove("show","failed"); });
   // hero
   $("#h-sym").textContent = d.symbol; $("#h-name").textContent = (D.analyst && D.analyst.name) || d.base;
   $("#h-price").textContent = fmtP(d.price);
@@ -132,7 +132,10 @@ function render(d, steps){
   const b = []; if (D.entry) b.push(`<span class="badge" style="color:${D.entry.status==="triggered"?"#39ff14":D.entry.status==="waiting"?"#ffe600":"#ff2bd6"}">${esc(D.entry.label)}</span>`);
   if (D.risk) b.push(`<span class="badge" style="color:${D.risk.ok?"#39ff14":"#ff3355"}">RİSK: ${esc(D.risk.verdict)}</span>`);
   if (D.scan && D.scan.setup) b.push(`<span class="badge" style="color:#00f0ff">${esc(D.scan.setup)}</span>`);
-  b.push(`<span class="badge" style="color:#ff2bd6">KAĞIT MOD</span>`); $("#h-badges").innerHTML = b.join("");
+  if (D.signal) b.push(`<span class="badge" style="color:${D.signal.dir==="LONG"?"#39ff14":D.signal.dir==="SHORT"?"#ff3355":"#ffe600"}">SİNYAL: ${D.signal.dir}</span>`);
+  $("#h-badges").innerHTML = b.join("");
+  try { renderSignal(D.signal, d); } catch(e){ console.error(e); $("#signal").innerHTML = `<div class="err-line">✖ sinyal çizilemedi: ${esc(e.message)}</div>`; }
+  try { window.TRADE && TRADE.onAnalysis(d); } catch(e){ console.error(e); }
   const order = [[".p-chart",1],[".p-rsi",1],[".p-entry",3],[".p-plan",4],[".p-tm",5],[".p-budget",6],[".p-risk",7],[".p-ticket",8],[".p-alerts",9],[".p-analyst",10],[".p-congress",11],[".p-news",2]];
   order.forEach(([s], i) => setTimeout(() => document.querySelector(s).classList.add("show"), 80*i));
   const safe = (fn, sel, n) => { try { fn(); } catch(e){ console.error(e); document.querySelector(sel).querySelector("h3").insertAdjacentHTML("afterend", panelFail(sel,{error:"çizim hatası: "+e.message})); } };
@@ -156,10 +159,29 @@ function render(d, steps){
   $("#sum-disc").textContent = "⚠ " + d.disclaimer; const s = $("#summary"); s.classList.remove("show"); setTimeout(() => s.classList.add("show"), 1000);
 }
 
+/* signal */
+function renderSignal(S, d){
+  const el = $("#signal"); if (!S){ el.innerHTML = `<div class="err-line">✖ sinyal hesaplanamadı (açılış aralığı / mum verisi eksik)</div>`; return; }
+  const c = S.dir === "LONG" ? "long" : S.dir === "SHORT" ? "short" : "wait", a = S.active, L = a.side === "long";
+  const arrow = S.dir === "LONG" ? "▲" : S.dir === "SHORT" ? "▼" : "■";
+  const row = (k, v, sub, cl) => `<div class="sg-row ${cl||""}"><span>${k}</span><b>${fmtP(v)}</b><small>${sub||""}</small></div>`;
+  const dd = v => pct((v/a.entry - 1)*100);
+  el.className = "signal " + c;
+  el.innerHTML = `<div class="sg-head"><div class="sg-dir">${arrow} ${S.dir}</div><div class="sg-conf"><small>GÜVEN</small><b>%${S.conf}</b><div class="cbar"><div style="width:${S.conf}%"></div></div></div></div>
+   <div class="sg-sub">${S.dir === "BEKLE" ? `Net yön yok · ${L ? "hafif LONG" : "hafif SHORT"} eğilim (skor ${S.score.toFixed(0)}) · seviyeler ${L ? "LONG" : "SHORT"} için` : `skor ${S.score > 0 ? "+" : ""}${S.score.toFixed(0)} / 100 · ${a.mode === "piyasa" ? "kırılım gerçekleşti, piyasa fiyatından" : "tetik bekleniyor: " + fmtP(a.trigger) + (L ? " üstü kapanış" : " altı kapanış")}`}</div>
+   <div class="sg-levels">${row("GİRİŞ", a.entry, a.mode, "e")}${row("STOP", a.stop, dd(a.stop) + " · " + esc(a.stop_label), "s")}${row("HEDEF " + (a.reward_risk||2) + "R", a.target, dd(a.target), "t")}</div>
+   <div id="sig-now" class="sg-now"></div>
+   <details class="sg-why"><summary>Neden? (5 faktör)</summary>${S.factors.map(f => { const v = f.v*f.w; return `<div class="fx"><div class="lab"><span>${esc(f.name)}</span><span class="${cls(v)}">${v>0?"+":""}${v.toFixed(0)}</span></div><div class="track"><div class="cen"></div><div class="b ${v>=0?"up":"dn"}" style="${v>=0?`left:50%;width:${Math.abs(f.v)*50}%`:`left:${50-Math.abs(f.v)*50}%;width:${Math.abs(f.v)*50}%`}"></div></div><small>${esc(f.txt)}</small></div>`; }).join("")}
+     <div class="plan-foot">LONG seviyeleri: giriş ${fmtP(S.levels.long.entry)} · stop ${fmtP(S.levels.long.stop)} · hedef ${fmtP(S.levels.long.target)}<br>SHORT seviyeleri: giriş ${fmtP(S.levels.short.entry)} · stop ${fmtP(S.levels.short.stop)} · hedef ${fmtP(S.levels.short.target)}</div></details>
+   <div class="sg-foot"><span>⚠ sinyal, garanti değil · yatırım tavsiyesi değildir</span><button type="button" id="sig-trade">İŞLEM ↓</button></div>`;
+  $("#sig-trade").addEventListener("click", () => { const t = $("#trade"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); });
+}
+
 /* chart */
 let chartTF = "5m";
-document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
-  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b)); if (CUR) renderChart(CUR, b.dataset.tf); }));
+document.querySelectorAll(".p-chart .tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".p-chart .tabs button").forEach(x => x.classList.toggle("on", x === b)); if (CUR) renderChart(CUR, b.dataset.tf); }));
+function chartPlan(D){ return D.signal && D.signal.dir === "SHORT" ? D.signal.active : D.plan; }
 function renderChart(d, tf){
   chartTF = tf; const el = $("#chart"); const D = d.data;
   if (chart){ chart.remove(); chart = null; }
@@ -173,11 +195,11 @@ function renderChart(d, tf){
   const prec = d.price >= 1000 ? 2 : d.price >= 1 ? 4 : d.price >= 0.01 ? 5 : 8;
   cseries = chart.addCandlestickSeries({ upColor: "#39ff14", downColor: "#ff3355", borderUpColor: "#39ff14", borderDownColor: "#ff3355",
     wickUpColor: "#39ff14aa", wickDownColor: "#ff3355aa", priceFormat: { type: "price", precision: prec, minMove: Math.pow(10,-prec) },
-    autoscaleInfoProvider: orig => { const r = orig(); if (r && D.plan) { const pr = r.priceRange;
-      pr.minValue = Math.min(pr.minValue, D.plan.stop); pr.maxValue = Math.max(pr.maxValue, D.plan.target, D.plan.entry); } return r; } });
+    autoscaleInfoProvider: orig => { const r = orig(); const P = chartPlan(D); if (r && P) { const pr = r.priceRange;
+      pr.minValue = Math.min(pr.minValue, P.stop, P.target, P.entry); pr.maxValue = Math.max(pr.maxValue, P.stop, P.target, P.entry); } return r; } });
   cseries.setData(raw.map(b => ({ time: b[0] + off, open: b[1], high: b[2], low: b[3], close: b[4] })));
-  if (D.plan){ const L = (p,c,t,s) => cseries.createPriceLine({ price: p, color: c, lineWidth: 2, lineStyle: s, axisLabelVisible: true, title: t });
-    L(D.plan.target, "#39ff14", "HEDEF", 2); L(D.plan.entry, "#00f0ff", "GİRİŞ", 0); L(D.plan.stop, "#ff3355", "STOP", 2); }
+  const P = chartPlan(D); if (P){ const L = (p,c,t,s) => cseries.createPriceLine({ price: p, color: c, lineWidth: 2, lineStyle: s, axisLabelVisible: true, title: t });
+    const pre = P.side === "short" ? "SHORT " : ""; L(P.target, "#39ff14", pre + "HEDEF", 2); L(P.entry, "#00f0ff", pre + "GİRİŞ", 0); L(P.stop, "#ff3355", pre + "STOP", 2); }
   if (D.entry && D.entry.trigger){ const step = tf === "1h" ? 3600 : 300; const t = Math.floor((D.entry.trigger.t - 300)/step)*step + off;
     if (raw.some(b => b[0] + off === t)) cseries.setMarkers([{ time: t, position: "belowBar", color: "#ffe600", shape: "arrowUp", text: "TETİK" }]); }
   if (tf === "1h") chart.timeScale().setVisibleLogicalRange({ from: raw.length - 120, to: raw.length + 4 });
@@ -314,18 +336,63 @@ function renderAlerts(price, first){
   const rows = [["Hedef","t",L.target],["Giriş tetik","e",L.entry],["Stop","s",L.stop]];
   const maxd = Math.max(...rows.map(r => Math.abs(r[2]/price-1)*100), 0.5);
   const flash = lastPrice !== null && price !== lastPrice ? (price > lastPrice ? "flash-up" : "flash-dn") : "";
-  $("#alerts-box").innerHTML = `<div class="live-price ${flash}">${fmtP(price)} <small id="live-at">${first ? "24s " + fmtP(a.low) + " – " + fmtP(a.high) : "güncellendi " + new Date().toLocaleTimeString("tr-TR",{timeZone:TZ})}</small></div>
+  $("#alerts-box").innerHTML = `<div class="live-price ${first ? "" : flash}">${fmtP(price)} <small id="live-at">${first ? "24s " + fmtP(a.low) + " – " + fmtP(a.high) : "güncellendi " + new Date().toLocaleTimeString("tr-TR",{timeZone:TZ})}</small></div>
    <div class="alv">${rows.map(([n,c,v]) => { const dd = (v/price-1)*100; const w = Math.min(50, Math.abs(dd)/maxd*50);
      return `<div class="al ${c}"><div class="lab"><span>${n} ${fmtP(v)}</span><span class="${cls(dd)}">${pct(dd)} uzakta</span></div><div class="track"><div class="cen"></div><div class="b" style="${dd>=0?`left:50%;width:${w}%`:`left:${50-w}%;width:${w}%`}"></div></div></div>`; }).join("")}</div>
-   <div class="plan-foot">Kapat saati: ${tLocal(a.flat_by_ts)} ${TZL} · Fiyat her 5 saniyede canlı güncellenir.</div>`;
+   <div class="plan-foot">Kapat saati: ${tLocal(a.flat_by_ts)} ${TZL} · Fiyat Binance WebSocket ile her işlemde (saniyede birkaç kez) güncellenir.</div>`;
   lastPrice = price;
 }
-function setLive(on){ $("#live").checked = on; clearInterval(liveTimer); liveTimer = null; if (on) { pollPrice(); liveTimer = setInterval(pollPrice, 5000); } }
+/* ---------------- realtime: Binance WebSocket (trade + kline_1m + ticker), REST 2s fallback ---------------- */
+const WS_HOSTS = ["wss://stream.binance.com:9443", "wss://data-stream.binance.vision"];
+const LIVE = { on: false, sym: null, ws: null, hostI: +(sessionStorage.getItem("neon.wsh") || 0), retry: 0, timer: null, poll: null, pending: false, lastPaint: 0, paintT: null,
+  price: null, prev: null, chg: null, hi: null, lo: null, tt: 0, k1: null, mode: "off", ticks: 0 };
+window.LIVE = LIVE;
+function setInd(mode){ LIVE.mode = mode; const el = $("#live-ind"); if (!el) return;
+  el.className = "live-ind " + mode; el.textContent = mode === "ws" ? "● CANLI" : mode === "rest" ? "● CANLI (REST 2sn)" : mode === "conn" ? "○ BAĞLANIYOR" : "○ KAPALI"; }
+function setLive(on){ $("#live").checked = on; if (on && CUR) liveStart(CUR.symbol); else liveStop(); }
 $("#live").addEventListener("change", e => setLive(e.target.checked));
-async function pollPrice(){ if (!CUR) return; try { const d = { price: await ENGINE.price(CUR.symbol) }; if (!d.price) return;
-  renderAlerts(d.price, false); $("#h-price").textContent = fmtP(d.price); const hu=$("#h-upd"); if (hu) hu.textContent = "canlı · " + new Date().toLocaleTimeString("tr-TR",{timeZone:TZ});
-  if (cseries && CUR){ const raw = chartTF === "1h" ? CUR.bars1h : CUR.bars5m; const b = raw[raw.length-1]; const off = tzOffset(b[0]);
-    b[2] = Math.max(b[2], d.price); b[3] = Math.min(b[3], d.price); b[4] = d.price; cseries.update({ time: b[0]+off, open: b[1], high: b[2], low: b[3], close: b[4] }); } } catch(e){} }
+function liveStop(){ LIVE.on = false; LIVE.sym = null; clearTimeout(LIVE.timer); stopPoll(); const w = LIVE.ws; LIVE.ws = null; if (w) try { w.close(); } catch(e){} setInd("off"); }
+function liveStart(sym){ liveStop(); LIVE.on = true; LIVE.sym = sym; LIVE.retry = 0; LIVE.prev = null; LIVE.price = null; liveConnect(); }
+function liveConnect(){
+  if (!LIVE.on) return; const sym = LIVE.sym, s = sym.toLowerCase(), url = WS_HOSTS[LIVE.hostI % WS_HOSTS.length] + `/stream?streams=${s}@trade/${s}@kline_1m/${s}@ticker`;
+  setInd(LIVE.mode === "rest" ? "rest" : "conn");
+  let ws; try { ws = new WebSocket(url); } catch(e){ return wsDown(null, false); }
+  LIVE.ws = ws; let opened = false; const ot = setTimeout(() => { if (!opened) try { ws.close(); } catch(e){} }, 7000);
+  ws.onopen = () => { opened = true; clearTimeout(ot); };
+  ws.onmessage = ev => { if (LIVE.ws !== ws || LIVE.sym !== sym) return; let m; try { m = JSON.parse(ev.data); } catch(e){ return; } const d = m.data || m;
+    if (!opened || LIVE.mode !== "ws"){ LIVE.retry = 0; stopPoll(); setInd("ws"); try { sessionStorage.setItem("neon.wsh", LIVE.hostI % WS_HOSTS.length); } catch(e){} }
+    if (d.e === "trade"){ tick(+d.p, d.T); }
+    else if (d.e === "24hrTicker"){ LIVE.chg = +d.P; LIVE.hi = +d.h; LIVE.lo = +d.l; if (LIVE.price === null) tick(+d.c, d.E); else schedule(); }
+    else if (d.e === "kline"){ LIVE.k1 = d.k; } };
+  ws.onerror = () => {};
+  ws.onclose = () => { clearTimeout(ot); if (LIVE.ws !== ws) return; wsDown(ws, opened); };
+}
+function wsDown(ws, opened){ LIVE.ws = null; if (!LIVE.on) return; if (!opened) LIVE.hostI++; LIVE.retry++;
+  startPoll(); const delay = Math.min(30000, 1000*Math.pow(2, Math.min(LIVE.retry, 5)));
+  clearTimeout(LIVE.timer); LIVE.timer = setTimeout(liveConnect, delay); }
+function startPoll(){ if (LIVE.poll) return; setInd("rest"); const f = async () => { if (!LIVE.on || !LIVE.sym) return; const sym = LIVE.sym;
+    try { const t = await ENGINE.ticker(sym); if (LIVE.sym !== sym || LIVE.mode === "ws") return; LIVE.chg = t.chg; LIVE.hi = t.high; LIVE.lo = t.low; tick(t.price, Date.now()); } catch(e){ setInd("rest"); } };
+  f(); LIVE.poll = setInterval(f, 2000); }
+function stopPoll(){ clearInterval(LIVE.poll); LIVE.poll = null; }
+function tick(p, T){ if (!isFinite(p) || p <= 0) return; LIVE.price = p; LIVE.tt = T || Date.now(); LIVE.ticks++; applyBar(p, LIVE.tt); schedule(); }
+function applyBar(p, T){ if (!CUR) return; for (const [key, step] of [["bars5m", 300], ["bars1h", 3600]]){ const raw = CUR[key]; if (!raw || !raw.length) continue;
+    const bt = Math.floor(T/1000/step)*step, b = raw[raw.length-1];
+    if (bt > b[0]) raw.push([bt, b[4], Math.max(b[4], p), Math.min(b[4], p), p]); else { b[2] = Math.max(b[2], p); b[3] = Math.min(b[3], p); b[4] = p; } } }
+function schedule(){ if (LIVE.pending) return; LIVE.pending = true; const wait = Math.max(0, 125 - (performance.now() - LIVE.lastPaint));
+  LIVE.paintT = setTimeout(() => requestAnimationFrame(paint), wait); }
+function flash(el, up){ if (!el) return; el.classList.remove("flash-up", "flash-dn"); void el.offsetWidth; el.classList.add(up ? "flash-up" : "flash-dn"); }
+function paint(){ LIVE.pending = false; LIVE.lastPaint = performance.now(); if (!CUR || LIVE.price === null) return;
+  const p = LIVE.price, prev = LIVE.prev; LIVE.prev = p;
+  const hp = $("#h-price"); hp.textContent = fmtP(p); if (prev !== null && p !== prev) flash(hp, p > prev);
+  if (LIVE.chg !== null){ const hc = $("#h-chg"); hc.textContent = pct(LIVE.chg) + " 24s"; hc.className = "chg " + cls(LIVE.chg); }
+  const hu = $("#h-upd"); if (hu) hu.textContent = "son güncelleme " + new Date(LIVE.tt).toLocaleTimeString("tr-TR",{timeZone:TZ}) + " " + TZL;
+  if (cseries){ const raw = chartTF === "1h" ? CUR.bars1h : CUR.bars5m; const b = raw[raw.length-1]; const off = tzOffset(b[0]);
+    try { cseries.update({ time: b[0]+off, open: b[1], high: b[2], low: b[3], close: b[4] }); } catch(e){} }
+  if (CUR.data.alerts) try { renderAlerts(p, false); } catch(e){}
+  const sn = $("#sig-now"); if (sn && CUR.data.signal){ const a = CUR.data.signal.active; sn.innerHTML = `şimdi <b>${fmtP(p)}</b> · girişe ${pct((a.entry/p-1)*100)}`; }
+  window.TRADE && TRADE.onTick && TRADE.onTick(p);
+}
+async function pollPrice(){ if (CUR && !LIVE.on) setLive(true); }
 /* analyst */
 function renderAnalyst(a){
   const circ = num(a.circulating_supply), mx = num(a.max_supply) || num(a.total_supply); const sp = circ && mx ? Math.min(100, circ/mx*100) : null;
@@ -367,4 +434,4 @@ $("#sheet-form").addEventListener("submit", e => { e.preventDefault(); const f =
 /* go */
 (async () => { await boot(); mirror(); if (matchMedia("(pointer:fine)").matches) inp.focus(); const q = params.get("coin"); if (q) run(q); else startDemo(); })();
 
-document.addEventListener("visibilitychange", () => { if (!document.hidden && $("#live").checked) pollPrice(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && $("#live").checked && CUR && !LIVE.ws){ clearTimeout(LIVE.timer); LIVE.retry = 0; liveConnect(); } });

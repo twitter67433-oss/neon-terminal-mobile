@@ -89,6 +89,8 @@ const pct = (a, b) => b ? (a/b - 1)*100 : 0;
 const decFor = p => p >= 1000 ? 2 : p >= 1 ? 4 : p >= 0.01 ? 6 : 10;
 const floorTo = (x, d) => Math.floor(x * 10**d) / 10**d;
 const roundTo = (x, d) => Math.round(x * 10**d) / 10**d;
+const ceilTo = (x, d) => Math.ceil(x * 10**d) / 10**d;
+function ema(a, n){ const k = 2/(n + 1); let e = a[0]; for (let i = 1; i < a.length; i++) e = a[i]*k + e*(1 - k); return e; }
 function findSetups(c){
   const last = c[c.length-1], hi20 = Math.max(...c.slice(-21, -1)), ma20 = c.slice(-20).reduce((a, b) => a + b, 0)/20,
     ma20p = c.slice(-21, -1).reduce((a, b) => a + b, 0)/20, run = c[c.length-6]/c[c.length-16] - 1,
@@ -130,44 +132,102 @@ async function stepNews(ctx, cfg){
   ctx.out.news = { moves: [{ pct: ctx.chg24 }], count: items.length, items: items.slice(0, cfg.news_max), source };
   return items.length ? `${items.length} başlık · kaynak: ${source}` : "haber kaynağı yok / sonuç yok";
 }
+function planFor(side, e, orr, cfg){
+  const mid = (orr.high + orr.low)/2, L = side === "long", dist = (L ? e - mid : mid - e)/e*100, dec = decFor(e);
+  let stop, label, note = "";
+  if (cfg.stop_rule === "or-mid" && dist >= cfg.min_stop_pct && dist <= cfg.max_stop_pct){ stop = L ? floorTo(mid, dec) : ceilTo(mid, dec); label = "açılış aralığı ortası"; }
+  else { stop = L ? floorTo(e*(1 - cfg.fallback_stop_pct/100), dec) : ceilTo(e*(1 + cfg.fallback_stop_pct/100), dec); label = `%${cfg.fallback_stop_pct} giriş ${L ? "altı" : "üstü"}`;
+    note = dist < cfg.min_stop_pct ? ` (aralık ortası çok yakın/yanlış tarafta <%${cfg.min_stop_pct})` : ` (aralık ortası çok uzak >%${cfg.max_stop_pct})`; }
+  const R = Math.abs(e - stop), target = roundTo(L ? e + cfg.target_r*R : Math.max(e - cfg.target_r*R, e*0.01), dec);
+  return { side, entry: e, stop, target, risk_per_share: R, reward_risk: cfg.target_r, stop_label: label, note };
+}
 function stepEntry(ctx, cfg){
   const now = Date.now()/1000, done = ctx.bars.filter(b => b.t + 300 <= now), hold = cfg.hold_hours, orMin = cfg.or_minutes;
   const day0 = Math.floor(now/86400)*86400; let used = day0, orr = openingRange(done, day0, orMin);
   if (!orr){ used = day0 - 86400; orr = openingRange(done, used, orMin); }
   if (!orr) throw new Error("açılış aralığı mumları eksik");
-  const after = done.filter(b => b.t >= orr.end && b.t < used + 86400), trig = after.find(b => b.c > orr.high), price = ctx.price;
-  let status, entry, etime;
-  if (trig){ const tc = trig.t + 300; status = now > tc + hold*3600 ? "expired" : "triggered"; entry = status === "triggered" ? trig.c : price; etime = status === "triggered" ? tc : now; }
-  else { status = "waiting"; entry = price <= orr.high ? orr.high : price; etime = now; }
+  const after = done.filter(b => b.t >= orr.end && b.t < used + 86400), price = ctx.price;
+  const side = (trig, lvl, L) => { let status, entry, etime;
+    if (trig){ const tc = trig.t + 300; status = now > tc + hold*3600 ? "expired" : "triggered"; entry = status === "triggered" ? trig.c : price; etime = status === "triggered" ? tc : now; }
+    else { status = "waiting"; entry = L ? (price <= lvl ? lvl : price) : (price >= lvl ? lvl : price); etime = now; }
+    return { status, entry, etime, trigger: trig ? { t: trig.t + 300, price: trig.c } : null }; };
+  const up = side(after.find(b => b.c > orr.high), orr.high, true), dn = side(after.find(b => b.c < orr.low), orr.low, false);
   const last24 = done.filter(b => b.t >= now - 86400);
-  ctx.entry = entry; ctx.entry_time = etime; ctx.orr = orr; ctx.entry_status = status;
-  const label = { waiting: "BEKLİYOR", triggered: "TETİKLENDİ", expired: "SÜRESİ DOLDU" }[status];
-  ctx.out.entry = { status, label, or_high: orr.high, or_low: orr.low, or_start: used, or_end: orr.end, entry, entry_time: etime,
-    trigger: trig ? { t: trig.t + 300, price: trig.c } : null, hi24: Math.max(...last24.map(b => b.h)), lo24: Math.min(...last24.map(b => b.l)), price, or_minutes: orMin };
-  return `Açılış aralığı (UTC ilk ${orMin}dk) ${orr.low} – ${orr.high} → ${label}`;
+  ctx.entry = up.entry; ctx.entry_time = up.etime; ctx.orr = orr; ctx.entry_status = up.status;
+  ctx.entry_short = dn.entry; ctx.entry_time_short = dn.etime; ctx.entry_status_short = dn.status;
+  const LB = { waiting: "BEKLİYOR", triggered: "TETİKLENDİ", expired: "SÜRESİ DOLDU" }, label = LB[up.status];
+  ctx.out.entry = { status: up.status, label, or_high: orr.high, or_low: orr.low, or_start: used, or_end: orr.end, entry: up.entry, entry_time: up.etime,
+    trigger: up.trigger, hi24: Math.max(...last24.map(b => b.h)), lo24: Math.min(...last24.map(b => b.l)), price, or_minutes: orMin,
+    short: { status: dn.status, label: LB[dn.status], entry: dn.entry, entry_time: dn.etime, trigger: dn.trigger } };
+  return `Açılış aralığı (UTC ilk ${orMin}dk) ${orr.low} – ${orr.high} → LONG ${label} · SHORT ${LB[dn.status]}`;
 }
 function stepExit(ctx, cfg){
-  const e = ctx.entry, orr = ctx.orr, mid = (orr.high + orr.low)/2, dist = (e - mid)/e*100, dec = decFor(e);
-  let stop, label, note = "";
-  if (cfg.stop_rule === "or-mid" && dist >= cfg.min_stop_pct && dist <= cfg.max_stop_pct){ stop = floorTo(mid, dec); label = "açılış aralığı ortası"; }
-  else { stop = floorTo(e*(1 - cfg.fallback_stop_pct/100), dec); label = `%${cfg.fallback_stop_pct} giriş altı`;
-    note = dist < cfg.min_stop_pct ? ` (aralık ortası çok yakın <%${cfg.min_stop_pct})` : ` (aralık ortası çok uzak >%${cfg.max_stop_pct})`; }
-  const target = roundTo(e + cfg.target_r*(e - stop), dec);
-  ctx.plan = { entry: e, stop, target, risk_per_share: e - stop, reward_risk: cfg.target_r, stop_label: label, flat_by_ts: ctx.entry_time + cfg.hold_hours*3600 };
-  ctx.out.plan = ctx.plan;
-  return `Giriş ${e} · Stop ${stop} (${label}${note}) · Hedef ${target} (${cfg.target_r}R)`;
+  const pl = planFor("long", ctx.entry, ctx.orr, cfg), ps = planFor("short", ctx.entry_short, ctx.orr, cfg);
+  ctx.plan = Object.assign(pl, { flat_by_ts: ctx.entry_time + cfg.hold_hours*3600 });
+  ctx.plan_short = Object.assign(ps, { flat_by_ts: ctx.entry_time_short + cfg.hold_hours*3600 });
+  ctx.out.plan = ctx.plan; ctx.out.plan_short = ctx.plan_short;
+  return `LONG giriş ${pl.entry} · stop ${pl.stop} (${pl.stop_label}${pl.note}) · hedef ${pl.target} (${cfg.target_r}R)\nSHORT giriş ${ps.entry} · stop ${ps.stop} · hedef ${ps.target}`;
 }
-function stepTM(ctx, cfg, onProg){
+function tmRun(ctx, cfg, plan, entry_time, onProg){
   return new Promise((res, rej) => {
-    const w = new Worker("tm-worker.js"); const B = ctx.bars;
+    const w = new Worker("tm-worker.js?v=3"); const B = ctx.bars;
     const t = new Float64Array(B.length), h = new Float64Array(B.length), l = new Float64Array(B.length), c = new Float64Array(B.length);
     B.forEach((b, i) => { t[i] = b.t; h[i] = b.h; l[i] = b.l; c[i] = b.c; });
     w.onmessage = ev => { const m = ev.data; if (m.type === "progress") { onProg && onProg(m.k); return; }
-      w.terminate(); if (m.type === "error") return rej(new Error(m.error));
-      ctx.out.tm = m.result; res(`${m.result.n} simülasyon: önce hedef %${m.result.target.toFixed(1)} · önce stop %${m.result.stop.toFixed(1)} · ort. ${m.result.avg_r.toFixed(2)}R`); };
+      w.terminate(); if (m.type === "error") return rej(new Error(m.error)); res(m.result); };
     w.onerror = e => { w.terminate(); rej(new Error(e.message || "worker hatası")); };
-    w.postMessage({ t, h, l, c, plan: ctx.plan, entry_time: ctx.entry_time, cfg }, [t.buffer, h.buffer, l.buffer, c.buffer]);
+    w.postMessage({ t, h, l, c, plan, entry_time, cfg }, [t.buffer, h.buffer, l.buffer, c.buffer]);
   });
+}
+async function stepTM(ctx, cfg, onProg){
+  const L = await tmRun(ctx, cfg, ctx.plan, ctx.entry_time, k => onProg && onProg(k/2));
+  ctx.out.tm = L;
+  let S = null; try { S = await tmRun(ctx, cfg, ctx.plan_short, ctx.entry_time_short, k => onProg && onProg(.5 + k/2)); ctx.out.tm_short = S; } catch(e){}
+  return `LONG ${L.n} simülasyon: önce hedef %${L.target.toFixed(1)} · önce stop %${L.stop.toFixed(1)} · ort. ${L.avg_r.toFixed(2)}R` +
+    (S ? `\nSHORT: önce hedef %${S.target.toFixed(1)} · önce stop %${S.stop.toFixed(1)} · ort. ${S.avg_r.toFixed(2)}R` : "");
+}
+/* LONG / SHORT / BEKLE signal from the other steps' outputs. Heuristic, not a guarantee. */
+const POS_W = ["surge","soar","rally","jump","gain","bull","bullish","record","partnership","launch","launches","approve","approved","approval","listing","lists","adopt","upgrade","etf","inflow","breakout","rise","rises","high"];
+const NEG_W = ["hack","hacked","exploit","crash","plunge","drop","drops","dump","lawsuit","sue","sued","sec","ban","banned","delist","delisting","bear","bearish","fraud","scam","outage","halt","liquidation","outflow","fall","falls","low","warning","probe"];
+function signal(ctx, cfg){
+  const O = ctx.out, B = ctx.bars, price = ctx.price, orr = ctx.orr; if (!orr || !B || B.length < 60) return null;
+  const closes = B.slice(-600).map(b => b.c), e20 = ema(closes, 20), e50 = ema(closes, 50);
+  const now = Date.now()/1000, day0 = Math.floor(now/86400)*86400; let vb = B.filter(b => b.t >= day0); if (vb.length < 12) vb = B.filter(b => b.t >= now - 86400);
+  let pv = 0, vv = 0; for (const b of vb){ const tp = (b.h + b.l + b.c)/3; pv += tp*b.v; vv += b.v; } const vwap = vv ? pv/vv : price;
+  const cl = x => Math.max(-1, Math.min(1, x)), sg = x => x > 0 ? 1 : x < 0 ? -1 : 0;
+  const F = [];
+  // 1) opening-range breakout direction
+  const E = O.entry || {}, Es = E.short || {}; let br = 0, brTxt;
+  const upOn = E.status === "triggered", dnOn = Es.status === "triggered";
+  if (upOn && dnOn){ br = (E.trigger.t > Es.trigger.t) ? 1 : -1; brTxt = "iki yön de kırıldı, son kırılım " + (br > 0 ? "yukarı" : "aşağı"); }
+  else if (upOn){ br = price > orr.high ? 1 : 0.5; brTxt = "açılış aralığı yukarı kırıldı"; }
+  else if (dnOn){ br = price < orr.low ? -1 : -0.5; brTxt = "açılış aralığı aşağı kırıldı"; }
+  else { const mid = (orr.high + orr.low)/2, half = (orr.high - orr.low)/2 || price*0.001; br = cl((price - mid)/half)*0.4; brTxt = "aralık içinde, kırılım bekleniyor"; }
+  F.push({ name: "Açılış aralığı kırılımı", w: 30, v: br, txt: brTxt });
+  // 2) trend: price vs EMA20/EMA50 (5dk) and VWAP
+  const tr = (sg(price - e20) + sg(e20 - e50) + sg(price - vwap))/3;
+  F.push({ name: "Trend (EMA20/50 · VWAP)", w: 25, v: tr, txt: `EMA20 ${e20.toPrecision(5)} · EMA50 ${e50.toPrecision(5)} · VWAP ${vwap.toPrecision(5)}` });
+  // 3) momentum: 1h / 4h change and daily RSI extremes
+  const c1 = B.length > 12 ? pct(price, B[B.length - 13].c) : 0, c4 = B.length > 48 ? pct(price, B[B.length - 49].c) : 0, r = O.scan ? O.scan.rsi : null;
+  let mo = Math.tanh(c1/1)*0.5 + Math.tanh(c4/2)*0.5; if (r !== null && r > 75) mo -= 0.3; if (r !== null && r < 25) mo += 0.3;
+  F.push({ name: "Momentum", w: 20, v: cl(mo), txt: `1s ${c1.toFixed(2)}% · 4s ${c4.toFixed(2)}%` + (r !== null ? ` · RSI ${r.toFixed(0)}` : "") });
+  // 4) news sentiment (keyword count on headlines)
+  let pos = 0, neg = 0; for (const it of (O.news && O.news.items) || []){ const w = (it.title || "").toLowerCase().split(/[^a-z0-9]+/);
+    for (const x of w){ if (POS_W.includes(x)) pos++; if (NEG_W.includes(x)) neg++; } }
+  const nw = pos + neg ? (pos - neg)/(pos + neg) : 0;
+  F.push({ name: "Haber duyarlılığı", w: 10, v: nw, txt: pos + neg ? `${pos} olumlu · ${neg} olumsuz kelime` : "başlık yok / nötr" });
+  // 5) time machine: long edge vs short edge
+  const tl = O.tm, ts = O.tm_short; let tmv = 0, tmTxt = "simülasyon yok";
+  if (tl && ts){ const el = tl.target - tl.stop, es = ts.target - ts.stop; tmv = cl((el - es)/40); tmTxt = `LONG hedef %${tl.target.toFixed(0)} / stop %${tl.stop.toFixed(0)} · SHORT hedef %${ts.target.toFixed(0)} / stop %${ts.stop.toFixed(0)}`; }
+  F.push({ name: "Zaman makinesi", w: 15, v: tmv, txt: tmTxt });
+  const score = F.reduce((a, f) => a + f.w*f.v, 0), dir = score >= 20 ? "LONG" : score <= -20 ? "SHORT" : "BEKLE";
+  const conf = Math.round(Math.min(90, 50 + Math.abs(score)*0.45));
+  const lean = score >= 0 ? "long" : "short";
+  const mk = sd => { const L = sd === "long", st = L ? E.status : Es.status, live = st === "triggered" || (L ? price > orr.high : price < orr.low);
+    const p = planFor(sd, live ? price : (L ? orr.high : orr.low), orr, cfg); p.mode = live ? "piyasa" : "tetik bekleniyor"; p.trigger = L ? orr.high : orr.low; return p; };
+  const levels = { long: mk("long"), short: mk("short") };
+  return { dir, score, conf, lean, levels, active: dir === "LONG" ? levels.long : dir === "SHORT" ? levels.short : levels[lean], factors: F,
+    tm: { long: tl ? tl.target : null, short: ts ? ts.target : null }, price, t: now, note: "sinyal, garanti değil" };
 }
 function stepBudget(ctx, cfg){
   const p = ctx.plan, e = p.entry, rpu = e - p.stop, dec = cfg.qty_decimals;
@@ -249,6 +309,7 @@ async function run(q, onEvent){
     else { try { log = await fn(ctx, cfg, k => onEvent({ type: "tmprog", k })) || ""; } catch(e){ err = (e && e.message) || String(e); } }
     onEvent({ type: "step", n, title, ok: !err, error: err, log, ms: Math.round(performance.now() - t0) });
   }
+  try { ctx.out.signal = signal(ctx, cfg); } catch(e){ console.error(e); ctx.out.signal = null; }
   const now = Date.now()/1000, h1 = new Map();
   for (const b of ctx.bars){ const k = Math.floor(b.t/3600)*3600, x = h1.get(k);
     if (!x) h1.set(k, { t: k, o: b.o, h: b.h, l: b.l, c: b.c }); else { x.h = Math.max(x.h, b.h); x.l = Math.min(x.l, b.l); x.c = b.c; } }
@@ -259,9 +320,9 @@ async function run(q, onEvent){
     ["Simülasyon", O.tm ? `hedef %${O.tm.target.toFixed(0)} / stop %${O.tm.stop.toFixed(0)} / ort. ${O.tm.avg_r >= 0 ? "+" : ""}${O.tm.avg_r.toFixed(2)}R` : "—"],
     ["Büyüklük", O.budget ? `${O.budget.qty} ${ctx.base} ≈ $${O.budget.notional.toFixed(2)} (risk $${O.budget.loss.toFixed(2)})` : "—"],
     ["Risk", O.risk ? O.risk.verdict : "—"], ["Analist", O.analyst ? `#${O.analyst.market_cap_rank}, ATH ${(O.analyst.ath_change_percentage||0).toFixed(0)}%` : "—"],
-    ["Kongre", "yalnızca masaüstü"]];
+    ["Kongre", "yalnızca masaüstü"], ["Sinyal", O.signal ? `${O.signal.dir} · güven %${O.signal.conf} (garanti değil)` : "—"]];
   onEvent({ type: "done", symbol: r.sym, base: r.base, price: ctx.price, chg24: ctx.chg24, data: O, summary,
-    disclaimer: "Bu bir analizdir, yatırım tavsiyesi değildir. Hiçbir emir gönderilmedi, hiçbir cüzdana dokunulmadı.",
+    disclaimer: "Bu bir analizdir, yatırım tavsiyesi değildir. Sinyal garanti değildir. Analiz hiçbir emir göndermez; emir yalnızca İŞLEM bölümünde senin ONAYLA dokunuşunla gider.",
     bars5m: ctx.bars.filter(b => b.t >= now - 36*3600).map(b => [b.t, b.o, b.h, b.l, b.c]),
     bars1h: [...h1.values()].slice(-24*14).map(x => [x.t, x.o, x.h, x.l, x.c]) });
 }
@@ -271,5 +332,6 @@ async function tape(bases){
   return syms.filter(s => m.has(s)).map(s => ({ base: s.replace(/USDT$/, ""), price: +m.get(s).lastPrice, chg: +m.get(s).priceChangePercent }));
 }
 async function price(sym){ return +(await bx("/api/v3/ticker/price?symbol=" + sym)).price; }
-return { run, tape, price, config, saveConfig, DEFAULTS, normalize };
+async function ticker(sym){ const d = await bx("/api/v3/ticker/24hr?symbol=" + sym); return { price: +d.lastPrice, chg: +d.priceChangePercent, high: +d.highPrice, low: +d.lowPrice }; }
+return { run, tape, price, ticker, config, saveConfig, DEFAULTS, normalize, decFor };
 })();

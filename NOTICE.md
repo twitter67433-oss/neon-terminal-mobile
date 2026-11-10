@@ -32,6 +32,10 @@ SOFTWARE.
 
 `vendor/lightweight-charts.standalone.production.js` — Copyright (c) TradingView, Inc. Apache License 2.0 — https://github.com/tradingview/lightweight-charts
 
+## @solana/web3.js
+
+`vendor/solana-web3.iife.min.js` (v1.99.0) — Copyright (c) Solana Labs, Inc. MIT License — https://github.com/solana-foundation/solana-web3.js. Yalnızca Phantom sekmesinde swap imzalanırken yüklenir.
+
 ## Yazı tipleri
 
 Orbitron, Share Tech Mono, JetBrains Mono — SIL Open Font License 1.1 (Google Fonts üzerinden).
