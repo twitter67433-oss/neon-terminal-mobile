@@ -12,8 +12,8 @@ let D = null, TAB = "bfx", livePx = null;
 /* ---------------- generic confirmation sheet ---------------- */
 function confirmSheet({ title, rows, mode, warn, okText }){
   return new Promise(res => {
-    const real = mode === "GERÇEK";
-    $("#cf-box").innerHTML = `<div class="cf-mode ${real ? "real" : "test"}">${real ? "⚠ GERÇEK PARA" : "TESTNET"}<small>${real ? "Gerçek hesabında işlem yapılacak" : "Test parası · gerçek değil"}</small></div>
+    const real = mode === "GERÇEK", sim = mode === "SIM";
+    $("#cf-box").innerHTML = `<div class="cf-mode ${real ? "real" : "test"}">${real ? "⚠ GERÇEK PARA" : sim ? "SIM · SANAL" : "TESTNET"}<small>${real ? "Gerçek hesabında işlem yapılacak" : sim ? "Sanal para · canlı fiyat · hiçbir şey gönderilmez" : "Test parası · gerçek değil"}</small></div>
       <div class="sheet-title">${esc(title)}</div>
       <div class="cf-rows">${rows.map(([k, v, c]) => `<div class="${c || ""}"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div>
       ${warn ? `<div class="cf-warn">${warn}</div>` : ""}
@@ -267,7 +267,7 @@ function bindBfx(){
    ===================================================================== */
 const SOL = { mint: "So11111111111111111111111111111111111111112", symbol: "SOL", decimals: 9 }, USDC = { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC", decimals: 6 };
 /* keyless browser-CORS RPCs (tested 2026-11-10); a user RPC (e.g. Helius) can be set in localStorage "neon.rpc" */
-const RPCS = ["https://solana-rpc.publicnode.com", "https://solana-mainnet.gateway.tatum.io", "https://api.mainnet-beta.solana.com"];
+const RPCS = ["https://solana-rpc.publicnode.com", "https://solana-mainnet.gateway.tatum.io"];
 const rpcCool = new Map(); /* url -> time until which it is skipped after 429/403 */
 const rpcList = () => { const c = (localStorage.getItem("neon.rpc") || "").trim(); return (/^https:\/\//.test(c) ? [c] : []).concat(RPCS); };
 const JUP = "https://lite-api.jup.ag";
@@ -333,7 +333,7 @@ async function getQuote(){
 }
 let w3p = null;
 function web3(){ if (window.solanaWeb3) return Promise.resolve(window.solanaWeb3);
-  return w3p = w3p || new Promise((ok, no) => { const s = document.createElement("script"); s.src = "vendor/solana-web3.iife.min.js?v=5"; s.onload = () => ok(window.solanaWeb3); s.onerror = () => { w3p = null; no(new Error("solana web3 yüklenemedi")); }; document.head.appendChild(s); }); }
+  return w3p = w3p || new Promise((ok, no) => { const s = document.createElement("script"); s.src = "vendor/solana-web3.iife.min.js?v=6"; s.onload = () => ok(window.solanaWeb3); s.onerror = () => { w3p = null; no(new Error("solana web3 yüklenemedi")); }; document.head.appendChild(s); }); }
 async function doSwap(){
   const p = prov(); if (!p || !ph.pk){ log("#ph-log", "✖ Önce Phantom'u bağla.", "dn"); return; }
   let Q = ph.quote; if (!Q || Date.now() - ph.qAt > 25000){ Q = await getQuote(); if (!Q) return; log("#ph-log", "Teklif yenilendi (eskiydi). Kontrol et."); }

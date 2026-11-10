@@ -7,11 +7,15 @@
 <title>NEON//TERMINAL 2100 — Kripto</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2305070b'/%3E%3Ctext x='3' y='13' font-size='13' fill='%2339ff14'%3E%3E%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="vendor/fonts.css">
-<link rel="stylesheet" href="style.css?v=5">
-<link rel="stylesheet" href="holo.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="holo.css?v=6">
+<link rel="stylesheet" href="meme.css?v=6">
+<link rel="preconnect" href="https://pumpportal.fun" crossorigin>
+<link rel="preconnect" href="https://solana-rpc.publicnode.com" crossorigin>
+<link rel="preconnect" href="https://api.x.ai" crossorigin>
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
 </head>
-<body>
+<body data-pg="meme">
 <div id="grid2100" aria-hidden="true"></div>
 <div id="crt"></div>
 
@@ -26,7 +30,7 @@
 </div>
 
 <header id="top">
-  <div class="brand"><span class="glitch" data-text="NEON//TERMINAL">NEON//TERMINAL</span><small>2100 · v5 · 11 BECERİ · PERP · PUMP.FUN · 7/24</small></div>
+  <div class="brand"><span class="glitch" data-text="NEON//TERMINAL">NEON//TERMINAL</span><small>2100 · v6 · MEME OTO · KOPYA · GROK · PERP</small></div>
   <div class="hdr-right">
     <span class="dot live"></span><span id="conn">CANLI VERİ</span>
     <span class="sep">│</span><span id="clock">--:--:--</span><small id="tzl">Berlin</small><button id="gear" type="button" aria-label="Ayarlar">⚙</button>
@@ -34,13 +38,15 @@
 </header>
 
 <div id="tape"><div id="tape-track"></div></div>
+<nav id="nav" role="tablist" aria-label="Bölümler"><button type="button" data-go="meme" class="on">⚡ MEME</button><button type="button" data-go="grok">🤖 GROK</button><button type="button" data-go="fut">📈 VADELİ</button><button type="button" data-go="wal">◈ CÜZDAN</button></nav>
 
 <section id="busbox" aria-label="Veri yolu: Binance, Motor, Sinyal, Risk, Emir, Phantom, Bot cüzdanı, pump.fun">
   <canvas id="bus"></canvas>
   <div class="bus-hud"><span>⟁ VERİ YOLU</span><small>her ışık = gerçek olay · tik · likidasyon · sinyal · emir · yeni token</small></div>
 </section>
 
-<form id="cmd" autocomplete="off">
+<section id="meme" class="panel holo show p-trade" data-pgs="meme"><h3><span class="num">⚡</span> MEME OTO · PUMP.FUN <small>izleyici · kopyacı · yürütücü · risk</small></h3><div id="meme-box"><div class="empty">yükleniyor…</div></div></section>
+<form id="cmd" autocomplete="off" data-pgs="fut">
   <label for="cmd-input" class="prompt">coin&gt;</label>
   <div class="cmd-wrap">
     <input id="cmd-input" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go" aria-label="coin">
@@ -48,16 +54,16 @@
   </div>
   <button type="submit">ÇALIŞTIR ⏎</button>
 </form>
-<div class="hint">Örnek: <b>btc</b> · <b>solana</b> · <b>init</b> · <b>INITUSDT</b> · <b>ETH-USD</b> — Enter'a bas. Binance USDⓈ-M vadeli (PERP) verisi — emirlerin gittiği sözleşmenin aynısı, canlı WebSocket. Analiz emir göndermez; emir İŞLEM bölümünde senin ONAYLA dokunuşunla gider. OTO AL-SAT (aşağıda, BOT) varsayılan kapalı. <a href="#pump">pump.fun canlı ↓</a></div>
+<div class="hint" data-pgs="fut">Örnek: <b>btc</b> · <b>solana</b> · <b>init</b> · <b>INITUSDT</b> · <b>ETH-USD</b> — Enter'a bas. Binance USDⓈ-M vadeli (PERP) verisi — emirlerin gittiği sözleşmenin aynısı, canlı WebSocket. Analiz emir göndermez; emir İŞLEM bölümünde senin ONAYLA dokunuşunla gider. Binance OTO: ◈ CÜZDAN → OTO AL-SAT. pump.fun tam otomatik: <a href="#meme">⚡ MEME</a>.</div>
 
-<section id="progress" class="hidden">
+<section id="progress" class="hidden" data-pgs="fut">
   <div class="progress-head"><span id="prog-title">TARANIYOR</span><span id="prog-count">0/11</span></div>
   <div class="prog-bar"><div id="prog-fill"></div></div>
   <div id="steps"></div>
   <div id="plog"></div>
 </section>
 
-<section id="error" class="hidden">
+<section id="error" class="hidden" data-pgs="fut">
   <div class="err-box">
     <div class="err-title glitch red" data-text="SİSTEM HATASI">SİSTEM HATASI</div>
     <div id="err-msg"></div>
@@ -65,7 +71,7 @@
   </div>
 </section>
 
-<main id="dash" class="hidden">
+<main id="dash" class="hidden" data-pgs="fut">
   <div id="hero">
     <div class="hero-sym"><span id="h-sym">---</span><small id="h-name"></small><div id="h-src"></div></div>
     <div class="hero-price"><span id="h-price">--</span><span id="h-chg" class="chg">--</span><small class="hupd"><span id="live-ind" class="live-ind off">○ KAPALI</span> <span id="h-upd"></span></small><div id="h-perp" class="h-perp"></div></div>
@@ -110,17 +116,18 @@
     <div id="sum-disc"></div>
   </div>
 </main>
-<section id="pump" class="panel holo show p-trade"><h3><span class="num">⚡</span> PUMP.FUN · YENİ COİNLER</h3><div id="pump-box"><div class="empty">yükleniyor…</div></div></section>
-<section id="bot" class="panel holo show p-trade"><h3><span class="num">◈</span> BOT <span class="tabs btabs"><button type="button" data-bt="w" class="on">CÜZDAN</button><button type="button" data-bt="a">OTO AL-SAT</button><button type="button" data-bt="j">GÜNLÜK</button></span></h3>
+<section id="pump" class="panel holo show p-trade" data-pgs="meme"><h3><span class="num">⚡</span> PUMP.FUN · YENİ COİNLER</h3><div id="pump-box"><div class="empty">yükleniyor…</div></div></section>
+<section id="bot" class="panel holo show p-trade" data-pgs="wal"><h3><span class="num">◈</span> BOT <span class="tabs btabs"><button type="button" data-bt="w" class="on">CÜZDAN</button><button type="button" data-bt="a">OTO AL-SAT</button><button type="button" data-bt="j">GÜNLÜK</button></span></h3>
   <label class="snd"><input type="checkbox" id="nt-snd" checked> 🔔 ses + titreşim uyarıları</label>
   <div id="bot-box"><div class="empty">yükleniyor…</div></div>
 </section>
+<section id="grok" class="panel holo show p-trade" data-pgs="grok"><h3><span class="num">G</span> GROK · xAI ASİSTAN <small>görür · açıklar · önerir — işlem yapmaz</small></h3><div id="grok-box"><div class="empty">yükleniyor…</div></div></section>
 <button type="button" id="killfab" class="hidden" aria-label="Hepsini durdur">■ HEPSİNİ DURDUR</button>
-<section id="links" class="panel holo show"><h3><span class="num">⟁</span> BAĞLANTILAR <span class="tabs ctabs"><button type="button" data-ct="bn" class="on">BINANCE</button><button type="button" data-ct="ph">PHANTOM</button></span></h3>
+<section id="links" class="panel holo show" data-pgs="fut wal"><h3><span class="num">⟁</span> BAĞLANTILAR <span class="tabs ctabs"><button type="button" data-ct="bn" class="on">BINANCE</button><button type="button" data-ct="ph">PHANTOM</button></span></h3>
   <div id="links-st" class="links-st"></div>
   <div id="links-box"><div class="empty">yükleniyor…</div></div>
 </section>
-<footer>NEON//TERMINAL 2100 · v5 · veri: Binance USDⓈ-M Futures public API, CoinGecko, Hacker News · yöntem: <a href="https://github.com/Jakeschincariol/day-trader-skill" target="_blank" rel="noopener">Jakeschincariol/day-trader-skill</a> (MIT) · yatırım tavsiyesi değildir · sinyal garanti değildir · emirler yalnızca senin onayınla, anahtarlar yalnızca bu cihazda · pump.fun verisi: PumpPortal + Solana RPC · OTO AL-SAT varsayılan KAPALI, yalnızca BOT CÜZDANI ile</footer>
+<footer>NEON//TERMINAL 2100 · v6 · MEME OTO: SIM varsayılan (sanal para, canlı veri), GERÇEK yalnızca BOT CÜZDANI · GROK yalnızca önerir · veri: Binance USDⓈ-M Futures public API, CoinGecko, Hacker News · yöntem: <a href="https://github.com/Jakeschincariol/day-trader-skill" target="_blank" rel="noopener">Jakeschincariol/day-trader-skill</a> (MIT) · yatırım tavsiyesi değildir · sinyal garanti değildir · emirler yalnızca senin onayınla, anahtarlar yalnızca bu cihazda · pump.fun verisi: PumpPortal + Solana RPC · OTO AL-SAT varsayılan KAPALI, yalnızca BOT CÜZDANI ile</footer>
 <div id="sheet" class="hidden" role="dialog" aria-label="Ayarlar">
   <form id="sheet-form" class="sheet-box">
     <div class="sheet-title">⚙ AYARLAR</div>
@@ -132,15 +139,20 @@
   </form>
 </div>
 <div id="confirm" class="hidden" role="dialog" aria-label="Onay"><div class="sheet-box cf-box" id="cf-box"></div></div>
-<script src="bus.js?v=5"></script>
-<script src="engine.js?v=5"></script>
-<script src="chart.js?v=5"></script>
-<script src="app.js?v=5"></script>
-<script src="trade.js?v=5"></script>
-<script src="market.js?v=5"></script>
-<script src="conn.js?v=5"></script>
-<script src="bot.js?v=5"></script>
-<script src="pump.js?v=5"></script>
-<script src="auto.js?v=5"></script>
+<script src="bus.js?v=6"></script>
+<script src="engine.js?v=6"></script>
+<script src="chart.js?v=6"></script>
+<script src="app.js?v=6"></script>
+<script src="trade.js?v=6"></script>
+<script src="market.js?v=6"></script>
+<script src="conn.js?v=6"></script>
+<script src="bot.js?v=6"></script>
+<script src="pump.js?v=6"></script>
+<script src="auto.js?v=6"></script>
+<script src="exec.js?v=6"></script>
+<script src="copy.js?v=6"></script>
+<script src="meme.js?v=6"></script>
+<script src="grok.js?v=6"></script>
+<script src="nav.js?v=6"></script>
 </body>
 </html>

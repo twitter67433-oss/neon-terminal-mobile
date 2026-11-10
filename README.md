@@ -1,10 +1,30 @@
 # NEON//TERMINAL — mobil
 
-Telefonda çalışan, neon/"2100" görünümlü kripto analiz ve işlem terminali (v5). Bir coin yaz (`btc`, `solana`, `init`, `INITUSDT`, `ETH-USD`), Enter'a bas; 11 adımlık day-trader analizi tarayıcının içinde çalışır ve sonuç panoya dökülür.
+Telefonda çalışan, neon/"2100" görünümlü kripto analiz ve işlem terminali (v6). Ana sayfa artık **MEME** — otomatik al-sat yapan bir pump.fun meme coin platformu (SIM varsayılan); Binance vadeli analizi **VADELİ** sekmesinde. Bir coin yaz (`btc`, `solana`, `init`, `INITUSDT`, `ETH-USD`), Enter'a bas; 11 adımlık day-trader analizi tarayıcının içinde çalışır ve sonuç panoya dökülür.
 
 **Canlı sayfa:** https://twitter67433-oss.github.io/neon-terminal-mobile/
 
 > ⚠️ **Yatırım tavsiyesi değildir. Sinyal garanti değildir.** Elle her işlem onay penceresinde **ONAYLA**'ya dokunduğunda gider. **OTO AL-SAT varsayılan olarak KAPALI**dır; açarsan bot yalnızca BOT CÜZDANI'ndaki parayla, koyduğun limitler içinde onay sormadan işlem yapar. pump.fun tokenlarının büyük çoğunluğu kısa sürede değerini neredeyse tamamen kaybeder; vadeli işlemler kaldıraçlıdır.
+
+## v6 · MEME platformu (ana sayfa)
+
+Sekmeler: **MEME** (`#meme`) · **GROK** (`#grok`) · **VADELİ** (`#vadeli`, eski Binance analizi/grafik/işlem) · **CÜZDAN** (`#cuzdan`, BOT cüzdanı + günlük).
+
+**Modlar**
+- **SIM (varsayılan)** — sanal 1 SOL "yatırım" ile kağıt para. Veri gerçek ve canlıdır (PumpPortal yeni token akışı, Solana RPC curve okumaları, kopya cüzdanların gerçek işlemleri). Dolum gerçekçidir: ayarlanabilir gecikme (600 ms) sonrası **curve'ün o anki durumu** üzerinden sabit-çarpım hesabı, kayma, pump.fun %1,25 + PumpPortal %0,5 ücreti, öncelik ücreti, ağ ücreti ve ilk alımda token hesabı kirası (0,00203928 SOL). "Kuru boru hattı" açıksa SIM her işlemde gerçek trade-local işlemini kurar ve atılık bir anahtarla **yerelde imzalar ama göndermez** → gecikme ölçümleri gerçek olur. SIM bakiyesi SIFIRLA yazılarak sıfırlanır.
+- **GERÇEK** — BOT CÜZDANI'ndaki parayla. Geçiş için GERÇEK yazmak, başlatmak için risk sayfası + ONAYLA gerekir. Cüzdan GERÇEK oto açıkken kilitlenemez.
+- Oto **sayfa yenilenince KAPALI** başlar. "Açılışta otomatik başlat" ayrı bir kutudur, uyarı gösterir ve BAŞLAT yazmayı ister (GERÇEK'te yine de risk + ONAYLA sorulur).
+- Elle işlemler (token detayındaki MEME AL/SAT) her zaman **ONAYLA** ister.
+
+**Ajanlar** — İZLEYİCİ (yeni tokenları filtreler, N sn bekleyip momentumu ölçer) · KOPYACI (takip ettiğin cüzdanların pump.fun alımlarını kopyalar, onlar satınca aynı oranda satar) · YÜRÜTÜCÜ (işlemi kurar, imzalar, gönderir, onaylar) · RİSK (kayıptan sonra yarım boyut, art arda 2 kayıpta 60 dk mola, boyutu yalnızca yeni özsermaye zirvesinde büyütür, işlem başı max, günlük max zarar, kill switch).
+
+**Hız (YÜRÜTÜCÜ)** — blockhash önbelleği ~2 sn'de bir; çözülmüş anahtar bellekte; PumpPortal trade-local + öncelik ücreti; açık pozisyonlar için satış işlemi önceden kurulur; isteğe bağlı Jito ipucu (bundle); birden çok RPC'ye paralel gönderim + özel RPC/WS alanı (Helius vb. önerilir); WebSocket `signatureSubscribe` ile onay (yedek: yoklama). Panelde her işlem için **olay→gönderim** ve **gönderim→onay** süreleri ve "HIZ TESTİ" (hiçbir şey göndermez) gösterilir.
+
+**Kopya işlem (anahtarsız)** — PumpPortal'ın cüzdan/token akışları en az 0,02 SOL yüklü bir API anahtarı istediği için kullanılmaz. Bunun yerine Solana RPC WebSocket `logsSubscribe({mentions:[cüzdan]})` (processed) dinlenir ve pump.fun TradeEvent'i çözülür (mint, SOL, token, al/sat, rezervler). Yalnızca bonding-curve işlemleri kopyalanır (PumpSwap/Raydium değil). "KEŞFET" en aktif cüzdanları RPC örneklemesiyle sıralar (çoğu bottur). api.mainnet-beta.solana.com tarayıcı kökenlerine 403 verdiği için sayfada kullanılmaz; yük için kendi RPC/WS adresini girmen önerilir.
+
+**Pano** — büyük bakiye + yatırımdan beri %, işaretli özsermaye eğrisi, merkezde animasyonlu küre, "Bu gece" zaman çizelgesi, işlem şeridi, risk merdiveni, takip edilen cüzdan kartları (PnL), gecikme tablosu. Işık hüzmeleri (BUS) KOPYA ve GROK düğümleriyle genişledi.
+
+**GROK** — xAI API (`api.x.ai`, CORS açık) ile sohbet; **kendi anahtarın** yalnızca bu tarayıcıda (localStorage) durur, varsayılan model `grok-4.7`. Grok'a kısa bir durum özeti (mod, bakiye, ayarlar, son işlemler, ajanlar) gider; önerileri kart olarak döner ve **UYGULA**'ya dokunursan ayar değişir. Grok **asla işlem yapmaz**. İsteğe bağlı "Grok onayı": her oto alımdan önce evet/hayır sorulur; zaman aşımında (2,5 sn) kurallara ya da reddetmeye düşer.
 
 ## Nasıl çalışır
 
@@ -86,6 +106,7 @@ Ses + titreşim uyarıları: sinyal, fiyatın giriş/stop/hedefi geçmesi, bot i
 - ⚠️ Bu bir "sıcak cüzdan"dır: yalnızca kaybetmeyi göze aldığın küçük bir miktar yükle. Tarayıcı verisi silinirse ve yedeğin yoksa para kaybolur.
 
 ### OTO AL-SAT (varsayılan KAPALI)
+- v6: pump.fun otosu artık MEME sekmesindeki motordadır (aşağıdaki limitler onun varsayılanlarıdır; SIM/GERÇEK, ajanlar ve risk kuralları yukarıda).
 - Açarken bir kez risk uyarısı (onay kutusu), ardından limit özeti için ONAYLA. Sayfa her açıldığında OTO yine KAPALI başlar.
 - **Yalnızca BOT CÜZDANI** kullanır; Phantom'a asla otomatik işlem gönderilmez.
 - Varsayılan limitler: işlem başı 0,05 SOL, toplam bütçe 0,5 SOL, günlük max zarar 0,25 SOL, en çok 3 açık pozisyon, kâr al +%50, zarar kes −%25, max tutma 15 dk.
@@ -98,7 +119,7 @@ Ses + titreşim uyarıları: sinyal, fiyatın giriş/stop/hedefi geçmesi, bot i
 
 ## English (short)
 
-Static, client-only crypto terminal for phones (no server, no backend). v5 adds: a "2100" data-bus canvas whose light particles are real events; a Binance-style futures chart with every timeframe 1m…1M, volume, EMA/VWAP and signal lines; a depth/liquidation heatmap, open interest and long/short ratios; separate TEST (testnet) and REAL Binance API key slots with a balance test and a typed confirmation for REAL; a live pump.fun new-token feed (PumpPortal WebSocket, live curve trades via Solana RPC, heuristic rug-risk score) with buy/sell via PumpPortal trade-local signed by Phantom or by the bot wallet; a PIN-encrypted in-browser **bot wallet** (PBKDF2 + AES-GCM); and **auto-trading that is OFF by default**, uses only the bot wallet, has hard limits (0.05 SOL/trade, 0.5 SOL budget, TP +50 %, SL −25 %, max 3 positions, daily loss cap), a kill switch, and runs only while the page is in the foreground. Binance auto on a REAL account needs a separate opt-in. Every manual trade needs a tap on ONAYLA. Not investment advice; meme coins are extremely risky.
+Static, client-only crypto terminal for phones (no server, no backend). **v6** makes the home page an automatic pump.fun meme-coin platform: SIM paper mode by default (virtual 1 SOL, live data, curve-math fills with slippage and fees, dry-run pipeline that builds and signs but never sends), REAL mode on the bot wallet behind typed confirmation; Watcher / Copier (keyless copy-trading via Solana logsSubscribe + pump.fun TradeEvent decoding) / Executor (blockhash cache, pre-built sells, priority fee, optional Jito tip, multi-RPC fan-out, WS confirms, measured latency) / Risk agents; an equity dashboard; and a GROK chat (xAI API, your own key stored locally) whose suggestions apply only on tap and which can optionally gate auto buys. Grok never trades. Binance futures lives in the VADELİ tab. v5 added: a "2100" data-bus canvas whose light particles are real events; a Binance-style futures chart with every timeframe 1m…1M, volume, EMA/VWAP and signal lines; a depth/liquidation heatmap, open interest and long/short ratios; separate TEST (testnet) and REAL Binance API key slots with a balance test and a typed confirmation for REAL; a live pump.fun new-token feed (PumpPortal WebSocket, live curve trades via Solana RPC, heuristic rug-risk score) with buy/sell via PumpPortal trade-local signed by Phantom or by the bot wallet; a PIN-encrypted in-browser **bot wallet** (PBKDF2 + AES-GCM); and **auto-trading that is OFF by default**, uses only the bot wallet, has hard limits (0.05 SOL/trade, 0.5 SOL budget, TP +50 %, SL −25 %, max 3 positions, daily loss cap), a kill switch, and runs only while the page is in the foreground. Binance auto on a REAL account needs a separate opt-in. Every manual trade needs a tap on ONAYLA. Not investment advice; meme coins are extremely risky.
 
 ## Bağlantılar
 

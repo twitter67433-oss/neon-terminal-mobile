@@ -16,11 +16,13 @@ const N = {
   rk: { x: .90, y: .22, l: "RİSK", c: C.c, s: "limitler" },
   em: { x: .58, y: .62, l: "EMİR", c: C.m, s: "ONAYLA" },
   ph: { x: .91, y: .58, l: "PHANTOM", c: "#ab9ff2", s: "Solana" },
-  bt: { x: .78, y: .88, l: "BOT", c: C.g, s: "cüzdan" } };
-const E = [["bn","mo"],["pf","mo"],["mo","sg"],["sg","rk"],["rk","em"],["em","bn"],["em","ph"],["em","bt"],["ph","bt"],["bt","pf"],["ph","pf"]];
+  bt: { x: .78, y: .88, l: "BOT", c: C.g, s: "cüzdan" },
+  cp: { x: .40, y: .86, l: "KOPYA", c: C.m, s: "cüzdan WS" },
+  gk: { x: .30, y: .12, l: "GROK", c: "#e8fbff", s: "xAI" } };
+const E = [["bn","mo"],["pf","mo"],["mo","sg"],["sg","rk"],["rk","em"],["em","bn"],["em","ph"],["em","bt"],["ph","bt"],["bt","pf"],["ph","pf"],["cp","mo"],["mo","gk"],["gk","rk"]];
 const EI = {}; E.forEach((e, i) => EI[e[0] + ">" + e[1]] = i);
 let W = 0, H = 0, dpr = 1, P = [], vis = true, raf = 0, last = 0, geo = [], t0 = performance.now();
-const stats = { bn: 0, pf: 0, mo: 0, sg: 0, rk: 0, em: 0, ph: 0, bt: 0 }, rate = { bn: 0, pf: 0 }, cnt = { bn: 0, pf: 0 }, glow = {}, state = {};
+const stats = { bn: 0, pf: 0, mo: 0, sg: 0, rk: 0, em: 0, ph: 0, bt: 0, cp: 0, gk: 0 }, rate = { bn: 0, pf: 0, cp: 0 }, cnt = { bn: 0, pf: 0, cp: 0 }, glow = {}, state = {};
 for (const k in N) glow[k] = 0;
 function resize(){ const r = cv.getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1); W = Math.max(1, r.width); H = Math.max(1, r.height);
   cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); build(); if (RM.matches || !raf) draw(performance.now()); }
@@ -50,12 +52,14 @@ function emit(kind, o = {}){
     case "liq": glow.bn = 1; for (let k = 0; k < 3; k++) setTimeout(() => spawn("bn", "mo", o.side === "SELL" ? C.r : C.g, { s: 3.2, v: 1.6 }), k*60); break;
     case "depth": glow.bn = Math.min(1, glow.bn + .2); break;
     case "pump": cnt.pf++; glow.pf = Math.min(1, glow.pf + .6); spawn("pf", "mo", C.o, { s: 2 }); break;
+    case "copy": cnt.cp++; glow.cp = 1; spawn("cp", "mo", o.buy ? C.g : C.r, { s: 2.4, v: 1.3 }); break;
+    case "grok": glow.gk = 1; for (let k = 0; k < 4; k++) setTimeout(() => chain(["mo","gk","rk"], "#e8fbff", { s: 2.2 }), k*90); break;
     case "phantom": glow.ph = 1; spawn("em", "ph", "#ab9ff2", { s: 2.4 }); break;
     case "state": state[o.node] = o.on; requestDraw(); return;
   }
   if (!raf && !RM.matches) loop();
 }
-setInterval(() => { rate.bn = cnt.bn; rate.pf = cnt.pf; cnt.bn = 0; cnt.pf = 0; if (RM.matches) requestDraw(); }, 1000);
+setInterval(() => { rate.bn = cnt.bn; rate.pf = cnt.pf; rate.cp = cnt.cp; cnt.bn = 0; cnt.pf = 0; cnt.cp = 0; if (RM.matches) requestDraw(); }, 1000);
 let drawQ = false; function requestDraw(){ if (drawQ) return; drawQ = true; requestAnimationFrame(t => { drawQ = false; draw(t); }); }
 function loop(){ raf = requestAnimationFrame(frame); }
 function frame(t){ raf = 0; if (!vis || document.hidden) return; const dt = Math.min(50, t - (last || t)); last = t;
@@ -84,7 +88,7 @@ function draw(t){
     const r = p.s*3.2, gr = ctx.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, "#ffffff"); gr.addColorStop(.25, p.c); gr.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill(); }
   // nodes
-  for (const k in N){ const n = N[k], { x, y } = pos(k), gl = glow[k] || 0, on = k === "bt" ? !!(window.WALLET && WALLET.unlocked()) : state[k] !== false, R = 13 + gl*3;
+  for (const k in N){ const n = N[k], { x, y } = pos(k), gl = glow[k] || 0, on = k === "bt" ? !!((window.WALLET && WALLET.unlocked()) || (window.MEME && MEME.on)) : k === "cp" ? !!(window.COPY && COPY.live) : k === "gk" ? !!(window.GROK && GROK.ready()) : state[k] !== false, R = 13 + gl*3;
     const halo = ctx.createRadialGradient(x, y, 2, x, y, R*2.6); halo.addColorStop(0, hexA(n.c, .35 + gl*.5)); halo.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(x, y, R*2.6, 0, 6.283); ctx.fill();
     ctx.globalCompositeOperation = "source-over";
@@ -92,7 +96,7 @@ function draw(t){
     ctx.strokeStyle = on ? n.c : "rgba(140,160,170,.5)"; ctx.lineWidth = 1.6 + gl*1.4; hex(x, y, R); ctx.stroke();
     if (!RM.matches){ ctx.save(); ctx.translate(x, y); ctx.rotate(T*(k === "mo" ? 1.1 : .5)); ctx.strokeStyle = hexA(n.c, .55); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, R + 5, 0, 1.4); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, R + 5, 3.14, 4.4); ctx.stroke(); ctx.restore(); }
     ctx.fillStyle = on ? "#e8fbff" : "#6b8794"; ctx.font = "600 9px Orbitron, 'Share Tech Mono', monospace"; ctx.textAlign = "center"; ctx.fillText(n.l, x, y + R + 13);
-    const sub = k === "bn" ? (rate.bn ? rate.bn + " tick/sn" : n.s) : k === "pf" ? (rate.pf ? rate.pf + " token/sn" : n.s) : k === "bt" ? (window.WALLET && WALLET.exists() ? (WALLET.unlocked() ? (window.AUTO && AUTO.pumpOn() ? "OTO ●" : "açık") : "kilitli") : "yok") : n.s;
+    const sub = k === "bn" ? (rate.bn ? rate.bn + " tick/sn" : n.s) : k === "pf" ? (rate.pf ? rate.pf + " token/sn" : n.s) : k === "bt" ? (window.MEME && MEME.on ? "OTO ● " + MEME.mode : window.WALLET && WALLET.exists() ? (WALLET.unlocked() ? "açık" : "kilitli") : "SIM") : k === "cp" ? (window.COPY ? (COPY.list.length ? COPY.list.length + " cüzdan" : "cüzdan yok") : n.s) : k === "gk" ? (window.GROK && GROK.ready() ? "bağlı" : "anahtar yok") : n.s;
     ctx.fillStyle = hexA(n.c, .8); ctx.font = "9px 'Share Tech Mono', monospace"; ctx.fillText(sub, x, y + R + 24);
     ctx.fillStyle = n.c; ctx.beginPath(); ctx.arc(x, y, 3 + gl*2.5, 0, 6.283); ctx.fill();
     ctx.globalCompositeOperation = "lighter"; }

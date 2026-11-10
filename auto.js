@@ -134,11 +134,11 @@ async function kill(ask = true){
   if (sellAll){ if (!WALLET.unlocked()) alog("✖ Satış için BOT CÜZDANI kilidini aç", "dn"); else for (const p of WALLET.pos.list()){ ST.selling.delete(p.mint); await sell(p.mint, "HEPSİNİ DURDUR"); } }
   if (closeBn) for (const e of JOURNAL.list().filter(e => e.venue === "binance" && e.mode === "OTO" && e.open)){ try { const n = await T().auto.close(e.sym); alog(`■ Binance ${esc(e.sym)} kapatıldı (${n})`, "up"); } catch(err){ alog(`✖ Binance ${esc(e.sym)} kapatılamadı: ${esc(T().trErr(err))}`, "dn"); } }
   if (closeBn) setTimeout(bnPoll, 4000); render(); }
-function afterToggle(){ const any = ST.pump || ST.bn; wake(any); document.body.classList.toggle("auto-on", any); const f = $("#killfab"); if (f) f.classList.toggle("hidden", !any);
+function afterToggle(){ const any = ST.pump || ST.bn; wake(any); document.body.classList.toggle("auto-on", any); const f = $("#killfab"); if (f) f.classList.toggle("hidden", !(any || (window.MEME && MEME.on)));
   window.BUS && BUS.emit("state", { node: "bt", on: any || WALLET.unlocked() }); render(); }
 /* ---------------- UI ---------------- */
 function status(){ const el = $("#au-st"); if (!el) return; const p = C.pump, op = autoPos();
-  el.innerHTML = `<div><small>pump.fun OTO</small><b class="${ST.pump ? "up" : "dim"}">${ST.pump ? "● AÇIK" : "○ KAPALI"}</b></div><div><small>Binance OTO</small><b class="${ST.bn ? "up" : "dim"}">${ST.bn ? "● AÇIK" : "○ KAPALI"}</b></div>
+  el.innerHTML = `<div><small>MEME OTO</small><b class="${window.MEME && MEME.on ? "up" : "dim"}">${window.MEME && MEME.on ? "● AÇIK · " + MEME.mode : "○ KAPALI"}</b></div><div><small>Binance OTO</small><b class="${ST.bn ? "up" : "dim"}">${ST.bn ? "● AÇIK" : "○ KAPALI"}</b></div>
     <div><small>Ekran kilidi</small><b class="${ST.wake ? "up" : "dim"}">${ST.wake ? "açık tutuluyor" : "—"}</b></div><div><small>İzlenen aday</small><b>${ST.cands.size}</b></div>
     <div><small>Açık oto poz.</small><b>${op.length} / ${p.maxPos}</b></div><div><small>Kullanılan bütçe</small><b>${fmt(deployed(), 3)} / ${p.budget} SOL</b></div>
     <div><small>Bugün oto K/Z</small><b class="${todayLoss() >= 0 ? "up" : "dn"}">${todayLoss() >= 0 ? "+" : ""}${fmt(todayLoss(), 4)} SOL</b></div><div><small>Bot cüzdanı</small><b class="${WALLET.unlocked() ? "up" : "dn"}">${!WALLET.exists() ? "yok" : WALLET.unlocked() ? "açık" : "kilitli"}</b></div>`; }
@@ -154,17 +154,7 @@ function autoHTML(){ const p = C.pump, b = C.bn, c = T().keys.bget();
   return `<div class="cf-warn fg-note">⏻ OTO yalnızca bu sayfa <b>açık ve ön plandayken</b> çalışır (tarayıcı sınırı). Ekran açık tutulur (Wake Lock); telefonu kilitlersen ya da başka uygulamaya geçersen durabilir. Sayfa yenilenince OTO <b>kapalı</b> başlar.</div>
     <div id="au-st" class="au-st"></div>
     <button type="button" id="au-kill" class="kill">■ HEPSİNİ DURDUR</button>
-    <div class="sub-h">PUMP.FUN · BOT CÜZDANI</div>
-    <label class="chk big"><input type="checkbox" id="au-pump" ${ST.pump ? "checked" : ""}> <b>OTO AL-SAT</b> <small>(yalnızca BOT CÜZDANI · Phantom asla)</small></label>
-    <div class="f3">${inp("ap", "perTrade", "İşlem başı SOL", p.perTrade)}${inp("ap", "budget", "Toplam bütçe SOL", p.budget)}${inp("ap", "dailyLoss", "Günlük max zarar SOL", p.dailyLoss)}</div>
-    <div class="f3">${inp("ap", "maxPos", "Max açık pozisyon", p.maxPos)}${inp("ap", "tp", "Kâr al +%", p.tp)}${inp("ap", "sl", "Zarar kes −%", p.sl)}</div>
-    <div class="f3">${inp("ap", "holdMin", "Max tutma (dk)", p.holdMin)}${inp("ap", "slip", "Kayma %", p.slip)}${inp("ap", "prio", "Öncelik ücreti SOL", p.prio)}</div>
-    <details class="keys" open><summary>Giriş filtreleri (yeni token)</summary>
-      <div class="f3">${inp("ap", "minInit", "Min ilk alım SOL", p.minInit)}${inp("ap", "minMcap", "Min mcap SOL", p.minMcap)}${inp("ap", "maxMcap", "Max mcap SOL", p.maxMcap)}</div>
-      <div class="f3">${inp("ap", "maxDev", "Dev payı ≤ %", p.maxDev)}${inp("ap", "maxRisk", "Rug riski ≤", p.maxRisk)}${inp("ap", "waitSec", "Bekle (sn)", p.waitSec)}</div>
-      <div class="f2">${inp("ap", "minMom", "Momentum ≥ % (bekleme sonunda)", p.minMom)}<label class="chk" style="align-self:end"><input type="checkbox" data-ap="needSoc" ${p.needSoc ? "checked" : ""}> sosyal hesap şart</label></div>
-      <label>Kara liste (yaratıcı adresleri, virgülle)<input data-ap="blacklist" value="${esc(p.blacklist)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <div class="plan-foot">Kural: yeni token filtreleri geçerse ${p.waitSec} sn izlenir; sonunda mcap çıkıştan ≥ %${p.minMom} yukarıdaysa, zirveden %20'den fazla düşmediyse ve sınırlar uygunsa BOT ${p.perTrade} SOL ile alır. Çıkış: +%${p.tp} kâr, −%${p.sl} zarar, ${p.holdMin} dk süre ya da curve tamamlanınca %100 satış. Değer, bonding curve'den hesaplanan satış teklifidir (ücretler dahil tahmini).</div></details>
+    <div class="sub-h">PUMP.FUN</div><div class="cf-warn fg-note">⚡ pump.fun tam otomatik al-sat (SIM / GERÇEK, izleyici + kopyacı + risk ajanları) artık <a href="#meme" onclick="NAV.go('meme');return false">⚡ MEME</a> sekmesinde. Aşağıda BOT CÜZDANI'ndaki tüm pozisyonlar görünür.</div>
     <div class="sub-h">AÇIK BOT POZİSYONLARI</div><div id="au-pos" class="pos-list"></div>
     <div class="sub-h">BINANCE VADELİ · SİNYAL</div>
     <label class="chk big"><input type="checkbox" id="au-bn" ${ST.bn ? "checked" : ""}> <b>Binance oto</b> <small>aktif: <b class="${c.testnet ? "" : "dn"}">${c.testnet ? "TEST API (Testnet) — serbest" : "⚠ GERÇEK API"}</b></small></label>
@@ -174,7 +164,7 @@ function autoHTML(){ const p = C.pump, b = C.bn, c = T().keys.bget();
     <div class="plan-foot">Kural: analiz edilen coinde LONG/SHORT sinyali, güven ≥ eşik ve kırılım gerçekleşmişse (piyasa girişi) — sembolde açık pozisyon yoksa — ayarlardaki max zarar ($${ENGINE.config().max_loss_per_trade}) ve pozisyon tavanıyla MARKET emir + STOP_MARKET + TAKE_PROFIT_MARKET kurulur. Analiz ${b.rescanMin} dk'da bir yenilenir.</div>
     <div class="sub-h">OTO KAYIT</div><div id="au-log" class="tlog">${ST.ev.map(e => `<div class="${e.cls || ""}"><small>${tm(e.t)}</small> ${e.msg}</div>`).join("")}</div>`; }
 function autoBind(){ const box = $("#bot-box");
-  $("#au-pump").onchange = e => setPump(e.target.checked); $("#au-bn").onchange = e => setBn(e.target.checked); $("#au-kill").onclick = () => kill(true);
+  const ap = $("#au-pump"); if (ap) ap.onchange = e => setPump(e.target.checked); $("#au-bn").onchange = e => setBn(e.target.checked); $("#au-kill").onclick = () => kill(true);
   box.querySelectorAll("[data-ap],[data-ab]").forEach(i => i.addEventListener("change", () => { readForm(); const e = limitsOk(); if (e.length) alog("⚠ " + esc(e.join("; ")), "dn"); status(); }));
   status(); paintPos(); }
 function journalHTML(){ const L = JOURNAL.list().slice().reverse(), tot = JOURNAL.totals();
@@ -194,10 +184,10 @@ function render(){ const box = $("#bot-box"); if (!box) return; document.querySe
   catch(e){ console.error(e); box.innerHTML = `<div class="err-line">✖ BOT paneli hatası: ${esc(e.message)}</div>`; }
   const ns = $("#nt-snd"); if (ns) ns.checked = NOTIFY.s.sound; }
 document.querySelectorAll(".btabs button").forEach(b => b.addEventListener("click", () => { UI.tab = b.dataset.bt; render(); }));
-window.BOTUI = { get tab(){ return UI.tab; }, open(t){ UI.tab = t; render(); const s = $("#bot"); s && s.scrollIntoView({ behavior: "smooth", block: "start" }); } };
+window.BOTUI = { get tab(){ return UI.tab; }, open(t){ window.NAV && NAV.go("wal"); UI.tab = t; render(); const s = $("#bot"); s && s.scrollIntoView({ behavior: "smooth", block: "start" }); } };
 JOURNAL.on(() => { if (UI.tab === "j") render(); else status(); });
 PUMP.onNew(onNew);
-const kf = $("#killfab"); if (kf) kf.onclick = () => kill(true);
+const kf = $("#killfab"); if (kf) kf.onclick = () => (window.MEME ? MEME.kill() : kill(true));
 const sn = $("#nt-snd"); if (sn){ sn.checked = NOTIFY.s.sound; sn.onchange = e => { NOTIFY.set({ sound: e.target.checked, vib: e.target.checked }); if (e.target.checked) setTimeout(() => NOTIFY.ping("good", "Uyarılar açık 🔔"), 50); }; }
 setInterval(() => { if (UI.tab === "a" && !document.hidden){ status(); paintPos(); } }, 3000);
 render();

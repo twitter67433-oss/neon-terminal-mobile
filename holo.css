@@ -99,7 +99,7 @@ code{font-family:var(--tech);color:var(--c)}
 .lsr{margin:8px 0}.lsr .lab{display:flex;justify-content:space-between;gap:6px;font-size:11px;margin-bottom:3px;flex-wrap:wrap}
 .lsbar{height:8px;border-radius:8px;background:linear-gradient(90deg,#ff3355,#ff335599);overflow:hidden}.lsbar div{height:100%;background:linear-gradient(90deg,#39ff14,#00f0ff);box-shadow:0 0 10px #39ff1488}
 /* ---------- pump.fun ---------- */
-#pump,#bot{margin:14px}
+#pump,#bot,#meme,#grok{margin:14px}
 .pf-feed{max-height:470px;overflow:auto;border:1px solid #13324a;border-radius:12px;background:rgba(2,6,12,.6)}
 .pf-row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:8px;padding:8px;border-bottom:1px solid #0b1c28;font-size:11px;cursor:pointer;animation:pfin .6s ease-out}
 .pf-row.sel{background:rgba(255,159,28,.10);box-shadow:inset 3px 0 0 #ff9f1c}
@@ -159,7 +159,7 @@ body.auto-on .kill{animation:killp 1.6s ease-in-out infinite}@keyframes killp{50
 @keyframes tin{from{opacity:0;transform:translateY(-8px)}}
 .dim{color:var(--dim)}
 @media (max-width:760px){
-  #pump,#bot{margin:10px 8px}
+  #pump,#bot,#meme,#grok{margin:10px 8px}
   .au-st{grid-template-columns:repeat(2,1fr)}
   #heat{height:210px}
   .bw-qr{width:104px;height:104px}

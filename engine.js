@@ -218,7 +218,7 @@ function stepExit(ctx, cfg){
 }
 function tmRun(ctx, cfg, plan, entry_time, onProg){
   return new Promise((res, rej) => {
-    const w = new Worker("tm-worker.js?v=5"); const B = ctx.bars;
+    const w = new Worker("tm-worker.js?v=6"); const B = ctx.bars;
     const t = new Float64Array(B.length), h = new Float64Array(B.length), l = new Float64Array(B.length), c = new Float64Array(B.length);
     B.forEach((b, i) => { t[i] = b.t; h[i] = b.h; l[i] = b.l; c[i] = b.c; });
     w.onmessage = ev => { const m = ev.data; if (m.type === "progress") { onProg && onProg(m.k); return; }

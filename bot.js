@@ -71,7 +71,7 @@ async function restore(secretB58, pin){ const W = await W3(); let sk; try { sk =
   const o = await encrypt(k.secretKey, pin); o.pub = k.publicKey.toBase58(); o.created = Date.now(); o.restored = true; localStorage.setItem(K, JSON.stringify(o)); kp = k; return o.pub; }
 async function unlock(pin){ const o = rec(); if (!o) throw new Error("bot cüzdanı yok"); const sk = await decrypt(o, pin); const W = await W3(), k = W.Keypair.fromSecretKey(sk);
   if (k.publicKey.toBase58() !== o.pub) throw new Error("anahtar adresle eşleşmiyor"); kp = k; return o.pub; }
-function lock(){ if (window.AUTO && AUTO.pumpOn()){ NOTIFY.toast("OTO AL-SAT açıkken cüzdan kilitlenemez — önce durdur.", "bad"); return false; } kp = null; return true; }
+function lock(){ if ((window.AUTO && AUTO.pumpOn()) || (window.MEME && MEME.on && MEME.mode === "GERÇEK")){ NOTIFY.toast("OTO AL-SAT açıkken cüzdan kilitlenemez — önce durdur.", "bad"); return false; } kp = null; return true; }
 async function exportSecret(pin){ const o = rec(); const sk = await decrypt(o, pin); return b58enc(sk); }
 const pub = () => (rec() || {}).pub || null;
 /* --- solana send helpers --- */
@@ -114,7 +114,7 @@ async function jupSwap({ inMint, outMint, rawAmount, slipBps }){ const q = await
   const j = await r.json(); if (!j.swapTransaction) throw new Error("Jupiter swap: " + (j.error || r.status)); const sig = await signSendVersioned(unb64(j.swapTransaction)); return { sig, q }; }
 async function tokInfo(mint){ const a = await (await fetch(JUP + "/tokens/v2/search?query=" + mint, { cache: "no-store" })).json(); return (a || []).find(x => x.id === mint) || null; }
 async function solPrice(){ try { const j = await (await fetch(JUP + "/price/v3?ids=" + SOLM, { cache: "no-store" })).json(); solUsd = +(j[SOLM] || {}).usdPrice || solUsd; } catch(e){} return solUsd; }
-let qrp = null; const qrLib = () => window.qrcode ? Promise.resolve() : (qrp = qrp || new Promise((ok, no) => { const s = document.createElement("script"); s.src = "vendor/qrcode.js?v=5"; s.onload = ok; s.onerror = () => { qrp = null; no(); }; document.head.appendChild(s); }));
+let qrp = null; const qrLib = () => window.qrcode ? Promise.resolve() : (qrp = qrp || new Promise((ok, no) => { const s = document.createElement("script"); s.src = "vendor/qrcode.js?v=6"; s.onload = ok; s.onerror = () => { qrp = null; no(); }; document.head.appendChild(s); }));
 async function qr(el, text){ try { await qrLib(); const q = qrcode(0, "M"); q.addData("solana:" + text); q.make(); el.innerHTML = q.createSvgTag({ cellSize: 4, margin: 3, scalable: true }); } catch(e){ el.textContent = "QR yüklenemedi"; } }
 
 /* ------------------------------ UI ------------------------------ */
@@ -199,7 +199,11 @@ function recordTrade({ venue, mint, sym, side, solDelta, sig, auto, reason, toke
     pos.del(mint); } }
 function render(){ const box = $("#bot-box"); if (!box || window.BOTUI && BOTUI.tab !== "w") return; box.innerHTML = html(); bind(); }
 window.addEventListener("pagehide", () => { kp = null; });
-return { render, html, bind, exists: () => !!rec(), unlocked: () => !!kp, pub, solBal, tokenBal, signSendVersioned, recordTrade, pos, paintBal, solPrice, get solUsd(){ return solUsd; },
+/* v6: sign-only (no send) for the low-latency executor (exec.js): it fans the signed bytes out to several RPCs / Jito itself */
+function sign(tx){ if (!kp) throw new Error("bot cüzdanı kilitli (PIN ile aç)");
+  if (tx.version !== undefined){ const payer = tx.message.staticAccountKeys[0].toBase58(); if (payer !== kp.publicKey.toBase58()) throw new Error("işlem bot cüzdanı için hazırlanmamış (" + short(payer) + ")"); tx.sign([kp]); }
+  else tx.sign(kp); return tx; }
+return { render, html, bind, exists: () => !!rec(), unlocked: () => !!kp, pub, sign, b58: b58enc, get kpPub(){ return kp ? kp.publicKey : null; }, solBal, tokenBal, signSendVersioned, recordTrade, pos, paintBal, solPrice, get solUsd(){ return solUsd; },
   _t: { encrypt, decrypt, b58enc, b58dec, create, unlock, lock, exportSecret, restore,
     /* test hook: sign a server-built tx with the bot key WITHOUT sending it */
     async signOnly(bytes){ if (!kp) throw new Error("kilitli"); const W = await W3(); const tx = W.VersionedTransaction.deserialize(bytes); const payer = tx.message.staticAccountKeys[0].toBase58(); tx.sign([kp]); return { payer, sigs: tx.signatures.length, signed: !tx.signatures[0].every(x => x === 0), len: tx.serialize().length }; } } };

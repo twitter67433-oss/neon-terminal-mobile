@@ -1,4 +1,4 @@
-/* NEON//TERMINAL v5 — PUMP.FUN canlı akış.
+/* NEON//TERMINAL v6 — PUMP.FUN canlı akış.
    New tokens: PumpPortal data WebSocket (wss://pumpportal.fun/api/data · subscribeNewToken · free, no key, works from the browser).
    Live trades / market cap of one token WITHOUT a key: Solana RPC WebSocket accountSubscribe on the token's bonding-curve account
    (wss://solana-rpc.publicnode.com) — every buy/sell changes the curve reserves; we decode them (buy = SOL in, sell = SOL out).
@@ -78,7 +78,7 @@ function cwOpen(){ if (CW.ws) return; const ws = new WebSocket("wss://solana-rpc
     if (j.method === "accountNotification"){ const k = CW.bySub.get(j.params.subscription), w = k && CW.want.get(k); if (!w) return; const c = decode(j.params.result.value.data[0]); if (c) w.cbs.forEach(f => { try { f(c); } catch(e){} }); } };
   ws.onclose = () => { CW.ws = null; CW.open = false; CW.bySub.clear(); for (const w of CW.want.values()) w.sub = null; if (CW.want.size) setTimeout(cwOpen, Math.min(15000, 1000*2**CW.retry++)); };
   ws.onerror = () => {}; }
-function cwSend(k){ if (!CW.open) return; const id = CW.id++; CW.byReq.set(id, k); CW.ws.send(JSON.stringify({ jsonrpc: "2.0", id, method: "accountSubscribe", params: [k, { encoding: "base64", commitment: "confirmed" }] })); }
+function cwSend(k){ if (!CW.open || !CW.ws || CW.ws.readyState !== 1) return; const id = CW.id++; CW.byReq.set(id, k); CW.ws.send(JSON.stringify({ jsonrpc: "2.0", id, method: "accountSubscribe", params: [k, { encoding: "base64", commitment: "confirmed" }] })); }
 function curveSub(k, cb){ if (!k) return () => {}; let w = CW.want.get(k); if (!w){ w = { cbs: new Set(), sub: null }; CW.want.set(k, w); if (CW.open) cwSend(k); else cwOpen(); } w.cbs.add(cb);
   return () => { w.cbs.delete(cb); if (!w.cbs.size){ CW.want.delete(k); if (w.sub !== null && CW.open) try { CW.ws.send(JSON.stringify({ jsonrpc: "2.0", id: CW.id++, method: "accountUnsubscribe", params: [w.sub] })); } catch(e){} if (!CW.want.size && CW.ws) setTimeout(() => { if (!CW.want.size && CW.ws) CW.ws.close(); }, 5000); } }; }
 function decode(b64){ try { const b = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); if (b.length < 49) return null; const v = new DataView(b.buffer); const u = o => Number(v.getBigUint64(o, true));
@@ -148,12 +148,16 @@ function detail(){ const el = $("#pf-detail"), t = S.sel; if (!el) return; if (!
     <div class="wsel"><button type="button" data-w="phantom" class="${s.wallet !== "bot" ? "on" : ""}">PHANTOM</button><button type="button" data-w="bot" class="${s.wallet === "bot" ? "on" : ""}">BOT CÜZDANI ${bot ? (WALLET.unlocked() ? "●" : "🔒") : "(yok)"}</button></div>
     <div class="f2"><label>Miktar (AL: SOL · SAT: adet ya da %)<input id="pf-amt" inputmode="decimal" value="${esc(s.amt)}"></label><label>Kayma %<input id="pf-slip" inputmode="decimal" value="${esc(s.slip)}"></label></div>
     <div class="f2"><label>Öncelik ücreti (SOL)<input id="pf-prio" inputmode="decimal" value="${esc(s.prio)}"></label><label>Havuz<select id="pf-pool">${["auto","pump","pump-amm","raydium","raydium-cpmm","launchlab","bonk"].map(x => `<option ${x === s.pool ? "selected" : ""}>${x}</option>`).join("")}</select></label></div>
-    <div class="side-btns"><button type="button" id="pf-buy" class="l on">▲ AL → ONAY</button><button type="button" id="pf-sell" class="s on">▼ SAT → ONAY</button></div>
+    <div class="sub-h">⚡ MEME MOTORU <small>${window.MEME ? MEME.mode : ""} · boyut, limitler ve çıkış kuralları MEME ayarlarından</small></div>
+    <div class="side-btns"><button type="button" id="pf-mbuy" class="l on">▲ ${window.MEME && MEME.mode === "GERÇEK" ? "" : "SIM "}AL → ONAY</button><button type="button" id="pf-msell" class="s on">▼ ${window.MEME && MEME.mode === "GERÇEK" ? "" : "SIM "}SAT → ONAY</button></div>
+    <details class="keys"><summary>Doğrudan işlem (Phantom ya da BOT, MEME dışı)</summary>
+    <div class="side-btns"><button type="button" id="pf-buy" class="l on">▲ AL → ONAY</button><button type="button" id="pf-sell" class="s on">▼ SAT → ONAY</button></div></details>
     <div class="cf-warn">⚠ pump.fun tokenlarının büyük çoğunluğu kısa sürede değerinin neredeyse tamamını kaybeder; rug-pull, bot ve sandviç saldırıları yaygındır. Kaybetmeyi göze alamayacağın parayı kullanma.</div></div>`;
   $("#pfd-x").onclick = () => { if (unsubSel){ unsubSel(); unsubSel = null; } S.sel = null; detail(); paint(); };
   $("#pfd-copy").onclick = () => navigator.clipboard && navigator.clipboard.writeText(t.mint).then(() => NOTIFY.toast("Mint kopyalandı"));
   el.querySelectorAll(".wsel button").forEach(b => b.onclick = () => { PSset({ wallet: b.dataset.w }); detail(); });
   $("#pf-buy").onclick = () => manual("buy"); $("#pf-sell").onclick = () => manual("sell");
+  $("#pf-mbuy").onclick = () => window.MEME && MEME.manual(t.mint, "buy"); $("#pf-msell").onclick = () => window.MEME && MEME.manual(t.mint, "sell");
   detailLive(); }
 /* ------------------------- trading ------------------------- */
 async function tradeLocal(pubkey, o){ const r = await fetch("https://pumpportal.fun/api/trade-local", { method: "POST", headers: { "Content-Type": "application/json" },

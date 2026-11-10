@@ -42,7 +42,7 @@ SOFTWARE.
 
 ## Harici hizmetler (kod değil, yalnızca veri/API)
 
-Binance USDⓈ-M Futures API ve WebSocket; PumpPortal (`pumpportal.fun` veri WebSocket'i ve trade-local); Solana JSON-RPC (solana-rpc.publicnode.com, solana-mainnet.gateway.tatum.io, api.mainnet-beta.solana.com); IPFS ağ geçitleri (gateway.pinata.cloud, ipfs.4everland.io, pump.mypinata.cloud); Jupiter (lite-api.jup.ag); CoinGecko; Hacker News Algolia. Bu proje bu hizmetlerle bağlantılı değildir; kullanım koşulları kendilerine aittir.
+Binance USDⓈ-M Futures API ve WebSocket; PumpPortal (`pumpportal.fun` veri WebSocket'i ve trade-local); Solana JSON-RPC ve WebSocket (solana-rpc.publicnode.com, solana-mainnet.gateway.tatum.io; kullanıcının girdiği özel RPC); Jito block engine (mainnet.block-engine.jito.wtf, isteğe bağlı ipucu/bundle); xAI API (api.x.ai, kullanıcının kendi anahtarıyla GROK sohbeti); IPFS ağ geçitleri (gateway.pinata.cloud, ipfs.4everland.io, pump.mypinata.cloud); Jupiter (lite-api.jup.ag); CoinGecko; Hacker News Algolia. Bu proje bu hizmetlerle bağlantılı değildir; kullanım koşulları kendilerine aittir.
 
 ## Yazı tipleri
 
