@@ -34,7 +34,15 @@ SOFTWARE.
 
 ## @solana/web3.js
 
-`vendor/solana-web3.iife.min.js` (v1.99.0) — Copyright (c) Solana Labs, Inc. MIT License — https://github.com/solana-foundation/solana-web3.js. Yalnızca Phantom sekmesinde swap imzalanırken yüklenir.
+`vendor/solana-web3.iife.min.js` (v1.99.0) — Copyright (c) Solana Labs, Inc. MIT License — https://github.com/solana-foundation/solana-web3.js. Phantom swap'ları ve BOT CÜZDANI (anahtar üretimi, yerel imza) için gerektiğinde yüklenir.
+
+## qrcode-generator
+
+`vendor/qrcode.js` (v1.4.4) — Copyright (c) 2009 Kazuhiko Arase. MIT License — https://github.com/kazuhikoarase/qrcode-generator. BOT CÜZDANI adresinin QR kodu için.
+
+## Harici hizmetler (kod değil, yalnızca veri/API)
+
+Binance USDⓈ-M Futures API ve WebSocket; PumpPortal (`pumpportal.fun` veri WebSocket'i ve trade-local); Solana JSON-RPC (solana-rpc.publicnode.com, solana-mainnet.gateway.tatum.io, api.mainnet-beta.solana.com); IPFS ağ geçitleri (gateway.pinata.cloud, ipfs.4everland.io, pump.mypinata.cloud); Jupiter (lite-api.jup.ag); CoinGecko; Hacker News Algolia. Bu proje bu hizmetlerle bağlantılı değildir; kullanım koşulları kendilerine aittir.
 
 ## Yazı tipleri
 

@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#05070b">
-<title>NEON//TERMINAL — Kripto</title>
+<title>NEON//TERMINAL 2100 — Kripto</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2305070b'/%3E%3Ctext x='3' y='13' font-size='13' fill='%2339ff14'%3E%3E%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="vendor/fonts.css">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="holo.css?v=5">
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
+<div id="grid2100" aria-hidden="true"></div>
 <div id="crt"></div>
 
 <!-- boot -->
@@ -24,7 +26,7 @@
 </div>
 
 <header id="top">
-  <div class="brand"><span class="glitch" data-text="NEON//TERMINAL">NEON//TERMINAL</span><small>11 BECERİ · KRİPTO · 7/24</small></div>
+  <div class="brand"><span class="glitch" data-text="NEON//TERMINAL">NEON//TERMINAL</span><small>2100 · v5 · 11 BECERİ · PERP · PUMP.FUN · 7/24</small></div>
   <div class="hdr-right">
     <span class="dot live"></span><span id="conn">CANLI VERİ</span>
     <span class="sep">│</span><span id="clock">--:--:--</span><small id="tzl">Berlin</small><button id="gear" type="button" aria-label="Ayarlar">⚙</button>
@@ -32,6 +34,11 @@
 </header>
 
 <div id="tape"><div id="tape-track"></div></div>
+
+<section id="busbox" aria-label="Veri yolu: Binance, Motor, Sinyal, Risk, Emir, Phantom, Bot cüzdanı, pump.fun">
+  <canvas id="bus"></canvas>
+  <div class="bus-hud"><span>⟁ VERİ YOLU</span><small>her ışık = gerçek olay · tik · likidasyon · sinyal · emir · yeni token</small></div>
+</section>
 
 <form id="cmd" autocomplete="off">
   <label for="cmd-input" class="prompt">coin&gt;</label>
@@ -41,7 +48,7 @@
   </div>
   <button type="submit">ÇALIŞTIR ⏎</button>
 </form>
-<div class="hint">Örnek: <b>btc</b> · <b>solana</b> · <b>init</b> · <b>INITUSDT</b> · <b>ETH-USD</b> — Enter'a bas. Binance USDⓈ-M vadeli (PERP) verisi — emirlerin gittiği sözleşmenin aynısı, canlı WebSocket. Analiz emir göndermez; emir yalnızca İŞLEM bölümünde senin ONAYLA dokunuşunla gider.</div>
+<div class="hint">Örnek: <b>btc</b> · <b>solana</b> · <b>init</b> · <b>INITUSDT</b> · <b>ETH-USD</b> — Enter'a bas. Binance USDⓈ-M vadeli (PERP) verisi — emirlerin gittiği sözleşmenin aynısı, canlı WebSocket. Analiz emir göndermez; emir İŞLEM bölümünde senin ONAYLA dokunuşunla gider. OTO AL-SAT (aşağıda, BOT) varsayılan kapalı. <a href="#pump">pump.fun canlı ↓</a></div>
 
 <section id="progress" class="hidden">
   <div class="progress-head"><span id="prog-title">TARANIYOR</span><span id="prog-count">0/11</span></div>
@@ -67,9 +74,12 @@
   <section id="signal" class="signal"></section>
   <section id="trade" class="panel p-trade show"><h3><span class="num">$</span> İŞLEM <span class="tabs ttabs"><button type="button" data-tt="bfx" class="on">BINANCE VADELİ</button><button type="button" data-tt="ph">PHANTOM</button></span></h3><div id="trade-box"><div class="empty">İşlem modülü yükleniyor…</div></div></section>
   <div class="grid">
-    <div class="panel p-chart" data-n="1"><h3><span class="num">01</span> GRAFİK &amp; TARAYICI <span class="tabs"><button data-tf="5m" class="on">5dk</button><button data-tf="1h">1s</button></span></h3>
+    <div class="panel p-chart" data-n="1"><h3><span class="num">01</span> GRAFİK &amp; TARAYICI <small id="ch-info"></small></h3>
+      <div class="tfbar" id="tfbar" role="toolbar" aria-label="Zaman dilimi"></div>
+      <div class="ovbar" id="ovbar" role="toolbar" aria-label="Göstergeler"></div>
+      <div id="ch-ohlc" class="ch-ohlc"></div>
       <div id="chart"><canvas id="orbox"></canvas></div>
-      <div class="legend"><span class="lg e">━ Giriş</span><span class="lg s">━ Stop</span><span class="lg t">━ Hedef</span><span class="lg o">▭ Açılış aralığı</span></div>
+      <div class="legend"><span class="lg e">━ Giriş</span><span class="lg s">━ Stop</span><span class="lg t">━ Hedef</span><span class="lg o">▭ Açılış aralığı</span><span class="lg y">━ EMA20</span><span class="lg m">━ EMA50</span><span class="lg v">━ VWAP</span></div>
     </div>
     <div class="panel p-rsi" data-n="1"><h3><span class="num">01</span> RSI / SMA</h3>
       <svg id="gauge" viewBox="0 0 200 120"></svg>
@@ -89,6 +99,10 @@
     <div class="panel p-analyst" data-n="10"><h3><span class="num">10</span> ANALİST · COINGECKO</h3><div id="analyst-box"></div></div>
     <div class="panel p-news" data-n="2"><h3><span class="num">02</span> HABERLER</h3><div id="news-box"></div></div>
     <div class="panel p-congress" data-n="11"><h3><span class="num">11</span> KONGRE İŞLEMLERİ</h3><div id="congress-box"></div></div>
+    <div class="panel p-mkt" data-n="12"><h3><span class="num">12</span> DERİNLİK ISI HARİTASI <small id="mk-info"></small></h3>
+      <canvas id="heat"></canvas><div id="depth-sum" class="kv"></div>
+      <div class="sub-h">LİKİDASYONLAR · CANLI</div><div id="liq-log" class="tlog"></div></div>
+    <div class="panel p-oi" data-n="13"><h3><span class="num">13</span> AÇIK POZİSYON · LONG/SHORT</h3><div id="oi-box"></div></div>
   </div>
   <div id="summary">
     <div class="sum-title glitch" data-text="ÖZET">ÖZET</div>
@@ -96,7 +110,17 @@
     <div id="sum-disc"></div>
   </div>
 </main>
-<footer>NEON//TERMINAL mobil · veri: Binance USDⓈ-M Futures public API, CoinGecko, Hacker News · yöntem: <a href="https://github.com/Jakeschincariol/day-trader-skill" target="_blank" rel="noopener">Jakeschincariol/day-trader-skill</a> (MIT) · yatırım tavsiyesi değildir · sinyal garanti değildir · emirler yalnızca senin onayınla, anahtarlar yalnızca bu cihazda</footer>
+<section id="pump" class="panel holo show p-trade"><h3><span class="num">⚡</span> PUMP.FUN · YENİ COİNLER</h3><div id="pump-box"><div class="empty">yükleniyor…</div></div></section>
+<section id="bot" class="panel holo show p-trade"><h3><span class="num">◈</span> BOT <span class="tabs btabs"><button type="button" data-bt="w" class="on">CÜZDAN</button><button type="button" data-bt="a">OTO AL-SAT</button><button type="button" data-bt="j">GÜNLÜK</button></span></h3>
+  <label class="snd"><input type="checkbox" id="nt-snd" checked> 🔔 ses + titreşim uyarıları</label>
+  <div id="bot-box"><div class="empty">yükleniyor…</div></div>
+</section>
+<button type="button" id="killfab" class="hidden" aria-label="Hepsini durdur">■ HEPSİNİ DURDUR</button>
+<section id="links" class="panel holo show"><h3><span class="num">⟁</span> BAĞLANTILAR <span class="tabs ctabs"><button type="button" data-ct="bn" class="on">BINANCE</button><button type="button" data-ct="ph">PHANTOM</button></span></h3>
+  <div id="links-st" class="links-st"></div>
+  <div id="links-box"><div class="empty">yükleniyor…</div></div>
+</section>
+<footer>NEON//TERMINAL 2100 · v5 · veri: Binance USDⓈ-M Futures public API, CoinGecko, Hacker News · yöntem: <a href="https://github.com/Jakeschincariol/day-trader-skill" target="_blank" rel="noopener">Jakeschincariol/day-trader-skill</a> (MIT) · yatırım tavsiyesi değildir · sinyal garanti değildir · emirler yalnızca senin onayınla, anahtarlar yalnızca bu cihazda · pump.fun verisi: PumpPortal + Solana RPC · OTO AL-SAT varsayılan KAPALI, yalnızca BOT CÜZDANI ile</footer>
 <div id="sheet" class="hidden" role="dialog" aria-label="Ayarlar">
   <form id="sheet-form" class="sheet-box">
     <div class="sheet-title">⚙ AYARLAR</div>
@@ -108,8 +132,15 @@
   </form>
 </div>
 <div id="confirm" class="hidden" role="dialog" aria-label="Onay"><div class="sheet-box cf-box" id="cf-box"></div></div>
-<script src="engine.js?v=4"></script>
-<script src="app.js?v=4"></script>
-<script src="trade.js?v=4"></script>
+<script src="bus.js?v=5"></script>
+<script src="engine.js?v=5"></script>
+<script src="chart.js?v=5"></script>
+<script src="app.js?v=5"></script>
+<script src="trade.js?v=5"></script>
+<script src="market.js?v=5"></script>
+<script src="conn.js?v=5"></script>
+<script src="bot.js?v=5"></script>
+<script src="pump.js?v=5"></script>
+<script src="auto.js?v=5"></script>
 </body>
 </html>

@@ -33,9 +33,18 @@ function log(id, msg, cls){ const el = $(id); if (!el) return; const t = new Dat
    reads: REST (browser CORS ok on fapi + testnet). writes (orders): WebSocket API
    (ws-fapi) because testnet's REST order endpoints fail the browser CORS preflight.
    ===================================================================== */
-const BK = "neon.bfx";
-function bget(){ let s = {}; try { s = JSON.parse(localStorage.getItem(BK) || "{}"); } catch(e){} return Object.assign({ key: "", secret: "", testnet: true, lev: 1, attach: true }, s); }
-function bset(o){ localStorage.setItem(BK, JSON.stringify(Object.assign(bget(), o))); }
+const BK = "neon.bfx", PK = { test: "neon.bfx.test", real: "neon.bfx.real" };
+/* two separate key stores: TEST API (testnet) and GERÇEK API (mainnet); "active" picks which one orders use */
+function rd(k){ try { return JSON.parse(localStorage.getItem(k) || "{}") || {}; } catch(e){ return {}; } }
+(function migrate(){ const o = rd(BK); if (o.key || o.secret){ const w = o.testnet === false ? "real" : "test"; const p = rd(PK[w]);
+  if (!p.key) localStorage.setItem(PK[w], JSON.stringify({ key: o.key, secret: o.secret }));
+  o.active = o.active || w; delete o.key; delete o.secret; delete o.testnet; localStorage.setItem(BK, JSON.stringify(o)); } })();
+function base(){ return Object.assign({ active: "test", lev: 1, attach: true }, rd(BK)); }
+function prof(w){ return Object.assign({ key: "", secret: "" }, rd(PK[w])); }
+function bget(w){ const b = base(), a = w || b.active, p = prof(a); return Object.assign({}, b, { which: a, key: p.key, secret: p.secret, testnet: a !== "real" }); }
+function bset(o){ const b = rd(BK); delete o.key; delete o.secret; delete o.testnet; localStorage.setItem(BK, JSON.stringify(Object.assign(b, o))); }
+function pset(w, o){ localStorage.setItem(PK[w], JSON.stringify(Object.assign(prof(w), o))); }
+function pdel(w){ localStorage.removeItem(PK[w]); }
 const REST = t => t ? "https://testnet.binancefuture.com" : "https://fapi.binance.com";
 const WSAPI = t => t ? "wss://testnet.binancefuture.com/ws-fapi/v1" : "wss://ws-fapi.binance.com/ws-fapi/v1";
 const ERR_TR = { "-1000": "Binance bilinmeyen hata", "-1003": "Çok fazla istek, biraz bekle", "-1021": "Zaman damgası uyuşmuyor (saat senkronu); tekrar dene",
@@ -55,10 +64,10 @@ async function hmac(secret, msg){ const k = await crypto.subtle.importKey("raw",
 let tOff = 0, tFor = null, tAt = 0;
 async function syncTime(t){ if (tFor === t && Date.now() - tAt < 300e3) return; const a = Date.now(); const r = await fetch(REST(t) + "/fapi/v1/time", { cache: "no-store" });
   if (!r.ok) throw new BErr({ http: r.status }); const j = await r.json(); const b = Date.now(); tOff = j.serverTime - Math.round((a + b)/2); tFor = t; tAt = b; }
-async function pub(path){ const c = bget(); const r = await fetch(REST(c.testnet) + path, { cache: "no-store" }); const j = await r.json().catch(() => ({}));
+async function pub(path, c){ c = c || bget(); const r = await fetch(REST(c.testnet) + path, { cache: "no-store" }); const j = await r.json().catch(() => ({}));
   if (!r.ok || (j && j.code < 0)) throw new BErr({ http: r.status, code: j.code, msg: j.msg }); return j; }
-async function signed(method, path, params = {}){
-  const c = bget(); if (!c.key || !c.secret) throw new Error("Önce API Key ve Secret gir (ayarlar).");
+async function signed(method, path, params = {}, c){
+  c = c || bget(); if (!c.key || !c.secret) throw new Error("Önce API Key ve Secret gir (BAĞLANTILAR → BINANCE).");
   await syncTime(c.testnet);
   const q = new URLSearchParams(Object.assign({}, params, { timestamp: Date.now() + tOff, recvWindow: 5000 })).toString();
   const sig = await hmac(c.secret, q);
@@ -77,8 +86,8 @@ function wsOpen(t){
   ws.onclose = () => { for (const p of pend.values()) p.no(new Error("WebSocket API bağlantısı kapandı")); pend.clear(); if (wsc && wsc.ws === ws) wsc = null; };
   return wsc.ready;
 }
-async function wsCall(method, params){
-  const c = bget(); if (!c.key || !c.secret) throw new Error("Önce API Key ve Secret gir.");
+async function wsCall(method, params, c){
+  c = c || bget(); if (!c.key || !c.secret) throw new Error("Önce API Key ve Secret gir (BAĞLANTILAR → BINANCE).");
   await syncTime(c.testnet); await wsOpen(c.testnet);
   const p = Object.assign({}, params, { apiKey: c.key, timestamp: Date.now() + tOff, recvWindow: 5000 });
   const q = Object.keys(p).sort().map(k => k + "=" + p[k]).join("&"); p.signature = await hmac(c.secret, q);
@@ -171,6 +180,7 @@ async function placeOrder(){
     try { await signed("POST", "/fapi/v1/leverage", { symbol: M.symbol, leverage: k.lev }); log("#bfx-log", `Kaldıraç ${k.lev}x ayarlandı`); }
     catch(e){ log("#bfx-log", "⚠ Kaldıraç ayarlanamadı: " + esc(trErr(e)), "dn"); if (e.code === -2015 || e.code === -2014 || e.code === -1022) throw e; }
     const o = await wsCall("order.place", Object.assign({ symbol: M.symbol, side, type: "MARKET", quantity: k.qty.toFixed(M.qdec), newOrderRespType: "RESULT" }, ps));
+    window.BUS && BUS.emit("order", { to: "bn" });
     log("#bfx-log", `✔ ${k.L ? "LONG" : "SHORT"} emri gönderildi · #${o.orderId} · ${esc(o.status)} · ort. ${o.avgPrice || "?"} · ${o.executedQty || k.qty}`, "up");
     if (attach){
       const ids = JSON.parse(localStorage.getItem("neon.algo." + (c.testnet ? "t" : "m")) || "{}"); ids[M.symbol] = ids[M.symbol] || [];
@@ -233,16 +243,7 @@ function bfxHTML(){
     <div class="f2"><button type="button" id="bfx-close" class="mini wide">POZİSYONU KAPAT</button><button type="button" id="bfx-cancel" class="mini wide">AÇIK EMİRLERİ İPTAL</button></div>
   </form>
   <div class="sub-h">KAYIT</div><div id="bfx-log" class="tlog"></div>
-  <details class="keys" ${c.key ? "" : "open"}><summary>⚙ API AYARLARI ${c.key ? "· anahtar kayıtlı (" + esc(c.key.slice(0, 4)) + "…" + esc(c.key.slice(-4)) + ")" : "· anahtar yok"}</summary>
-    <ol class="howto"><li>${c.testnet ? `Testnet anahtarı: <a href="https://testnet.binancefuture.com" target="_blank" rel="noopener">testnet.binancefuture.com</a> → giriş yap → alttaki "API Key" sekmesi.` : `Binance → Profil → <b>API Yönetimi</b> → API oluştur (Sistem tarafından oluşturulan / HMAC).`}</li>
-      <li>İzinler: yalnızca <b>"Vadeli İşlemleri Etkinleştir (Futures)"</b> ve okuma. <b style="color:var(--r)">Para çekme (Withdrawals) KAPALI olmalı.</b></li>
-      <li>IP kısıtlaması: telefonun IP'si sık değişir; kısıtsız anahtar bu cihazda çalışır ama daha risklidir. Kısıtsız kullanırsan anahtarı yalnızca vadeli + çekim kapalı tut, işin bitince sil.</li>
-      <li>Anahtarlar <b>yalnızca bu telefonda</b> (localStorage) saklanır ve sadece Binance'e gider; Secret cihazdan çıkmaz, emirleri burada imzalar. "Anahtarları sil" tamamen temizler.</li></ol>
-    <label>API Key<input id="bfx-key" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(c.key)}"></label>
-    <label>API Secret<input id="bfx-sec" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${c.secret ? "•••••• kayıtlı (değiştirmek için yaz)" : ""}"></label>
-    <label class="chk"><input type="checkbox" id="bfx-test" ${c.testnet ? "checked" : ""}> Testnet (test parası) — kapatırsan GERÇEK hesap</label>
-    <div class="sheet-btns"><button type="button" id="bfx-del">ANAHTARLARI SİL</button><button type="button" id="bfx-save" class="save">KAYDET</button></div>
-  </details>
+  <div class="keys-link"><span>API anahtarları: <b class="${c.testnet ? "" : "dn"}">${c.testnet ? "TEST API (Testnet)" : "⚠ GERÇEK API"}</b> aktif ${c.key ? "· " + esc(c.key.slice(0, 4)) + "…" + esc(c.key.slice(-4)) : "· anahtar yok"}</span><button type="button" class="mini" onclick="window.CONN && CONN.open('bn')">BAĞLANTILAR →</button></div>
   <div class="plan-foot">Analiz hiçbir emri kendisi göndermez. Her emir onay penceresi ve ONAYLA dokunuşu ister. Vadeli işlemler kaldıraçlıdır; kaybın teminatı aşabilir.</div>`;
 }
 function bindBfx(){
@@ -255,12 +256,6 @@ function bindBfx(){
   $("#bfx-go").onclick = placeOrder; $("#bfx-refresh").onclick = refreshAccount;
   $("#bfx-close").onclick = () => M ? closePosition(M.symbol) : log("#bfx-log", "✖ Vadeli sözleşme yok.", "dn");
   $("#bfx-cancel").onclick = () => M ? cancelAll(M.symbol) : log("#bfx-log", "✖ Vadeli sözleşme yok.", "dn");
-  $("#bfx-save").onclick = () => { const k = $("#bfx-key").value.trim(), s = $("#bfx-sec").value.trim(), t = $("#bfx-test").checked, o = bget();
-    if (!k || (!s && !o.secret)){ log("#bfx-log", "✖ API Key ve Secret gerekli.", "dn"); return; }
-    if (o.testnet !== t){ acct = null; dual = null; } bset({ key: k, secret: s || o.secret, testnet: t }); tFor = null; if (wsc) try { wsc.ws.close(); } catch(e){}
-    render(); log("#bfx-log", "Anahtarlar bu cihaza kaydedildi (" + (t ? "TESTNET" : "GERÇEK") + ").", "up"); refreshAccount(); };
-  $("#bfx-del").onclick = () => { localStorage.removeItem(BK); acct = null; dual = null; tFor = null; if (wsc) try { wsc.ws.close(); } catch(e){} render(); log("#bfx-log", "Anahtarlar silindi.", "up"); };
-  $("#bfx-test").onchange = e => { if (!e.target.checked) log("#bfx-log", "⚠ Testnet kapatıldı: KAYDET'e basarsan GERÇEK hesap kullanılır.", "dn"); };
   renderAcct();
   meta(D).then(m => { M = m; if (m && UM() > 1){ const lv = levelsFor(f.dataset.side) || {}; $("#bfx-stop").value = (lv.stop*UM()).toPrecision(6); $("#bfx-tgt").value = (lv.target*UM()).toPrecision(6); } recalc(); })
     .catch(e => { M = null; $("#bfx-calc").innerHTML = `<div class="err-line">✖ Vadeli sembol bilgisi alınamadı: ${esc(trErr(e))}</div>`; });
@@ -271,18 +266,23 @@ function bindBfx(){
    PHANTOM (Solana) · spot swaps via Jupiter · no shorting
    ===================================================================== */
 const SOL = { mint: "So11111111111111111111111111111111111111112", symbol: "SOL", decimals: 9 }, USDC = { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC", decimals: 6 };
-const RPCS = ["https://solana-rpc.publicnode.com", "https://api.mainnet-beta.solana.com"];
+/* keyless browser-CORS RPCs (tested 2026-11-10); a user RPC (e.g. Helius) can be set in localStorage "neon.rpc" */
+const RPCS = ["https://solana-rpc.publicnode.com", "https://solana-mainnet.gateway.tatum.io", "https://api.mainnet-beta.solana.com"];
+const rpcCool = new Map(); /* url -> time until which it is skipped after 429/403 */
+const rpcList = () => { const c = (localStorage.getItem("neon.rpc") || "").trim(); return (/^https:\/\//.test(c) ? [c] : []).concat(RPCS); };
 const JUP = "https://lite-api.jup.ag";
 let ph = { pk: null, bal: {}, tok: null, quote: null, qAt: 0, from: "USDC", to: "SOL" };
 const prov = () => (window.phantom && window.phantom.solana && window.phantom.solana.isPhantom) ? window.phantom.solana : (window.solana && window.solana.isPhantom ? window.solana : null);
 async function rpc(method, params){
   let last;
-  for (let round = 0; round < 2; round++) for (const u of RPCS){
-    try { const r = await fetch(u, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
-      if (r.status === 429 || r.status === 403){ last = new Error("RPC sınırı (" + r.status + ")"); continue; }
-      const j = await r.json(); if (j.error){ last = new Error(j.error.message); continue; } return j.result; }
-    catch(e){ last = e; }
-    await new Promise(r => setTimeout(r, 600));
+  for (let round = 0; round < 2; round++){ const now = Date.now(), L = rpcList().filter(u => round || !(rpcCool.get(u) > now));
+    for (const u of L){
+      try { const r = await fetch(u, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+        if (r.status === 429 || r.status === 403){ rpcCool.set(u, Date.now() + 30000); last = new Error("RPC sınırı (" + r.status + ")"); continue; }
+        const j = await r.json(); if (j.error){ last = new Error(j.error.message); if (j.error.code === -32005 || /rate limit/i.test(j.error.message)){ rpcCool.set(u, Date.now() + 30000); continue; } if (method === "sendTransaction") throw last; continue; } return j.result; }
+      catch(e){ if (method === "sendTransaction" && last === e) throw e; last = e; }
+    }
+    await new Promise(r => setTimeout(r, 700));
   }
   throw new Error("Solana RPC erişilemedi: " + (last && last.message));
 }
@@ -333,7 +333,7 @@ async function getQuote(){
 }
 let w3p = null;
 function web3(){ if (window.solanaWeb3) return Promise.resolve(window.solanaWeb3);
-  return w3p = w3p || new Promise((ok, no) => { const s = document.createElement("script"); s.src = "vendor/solana-web3.iife.min.js?v=4"; s.onload = () => ok(window.solanaWeb3); s.onerror = () => { w3p = null; no(new Error("solana web3 yüklenemedi")); }; document.head.appendChild(s); }); }
+  return w3p = w3p || new Promise((ok, no) => { const s = document.createElement("script"); s.src = "vendor/solana-web3.iife.min.js?v=5"; s.onload = () => ok(window.solanaWeb3); s.onerror = () => { w3p = null; no(new Error("solana web3 yüklenemedi")); }; document.head.appendChild(s); }); }
 async function doSwap(){
   const p = prov(); if (!p || !ph.pk){ log("#ph-log", "✖ Önce Phantom'u bağla.", "dn"); return; }
   let Q = ph.quote; if (!Q || Date.now() - ph.qAt > 25000){ Q = await getQuote(); if (!Q) return; log("#ph-log", "Teklif yenilendi (eskiydi). Kontrol et."); }
@@ -346,6 +346,7 @@ async function doSwap(){
     const j = await r.json(); if (!r.ok || !j.swapTransaction) throw new Error(j.error || ("Jupiter swap HTTP " + r.status));
     const W = await web3(); const bytes = Uint8Array.from(atob(j.swapTransaction), c => c.charCodeAt(0)); const tx = W.VersionedTransaction.deserialize(bytes);
     const res = await p.signAndSendTransaction(tx); const sig = res.signature || res;
+    window.BUS && BUS.emit("order", { to: "ph" });
     log("#ph-log", `✔ Gönderildi: <a href="https://solscan.io/tx/${esc(sig)}" target="_blank" rel="noopener">${esc(String(sig).slice(0, 10))}… (Solscan)</a>`, "up");
     ph.quote = null; setTimeout(refreshBal, 6000);
   } catch(e){ log("#ph-log", "✖ Swap başarısız: " + esc(e.code === 4001 ? "Phantom'da reddedildi" : (e.message || String(e))), "dn"); }
@@ -380,6 +381,42 @@ function bindPh(){
   if (p && !ph.pk) p.connect({ onlyIfTrusted: true }).then(r => { ph.pk = r.publicKey.toString(); render(); refreshBal(); }).catch(() => {});
 }
 
+
+/* =====================================================================
+   OTO AL-SAT hooks (auto.js). Only called when the user switched Binance auto ON.
+   Testnet: allowed. GERÇEK: only if the separate "Binance GERÇEK'te oto" box is ticked (auto.js enforces it).
+   ===================================================================== */
+async function positionsNow(c){ let pos; try { pos = await signed("GET", "/fapi/v2/positionRisk", {}, c); } catch(e){ pos = await signed("GET", "/fapi/v3/positionRisk", {}, c); } return (pos || []).filter(p => +p.positionAmt !== 0); }
+async function autoOrder(d, { lev = 1, cfgOverride } = {}){
+  const c = bget(); if (!c.key || !c.secret) throw new Error("aktif Binance bölümünde anahtar yok");
+  const S = d.data.signal; if (!S || (S.dir !== "LONG" && S.dir !== "SHORT")) throw new Error("sinyal yok");
+  await syncTime(c.testnet); const m = await meta(d); if (!m) throw new Error(d.symbol + " vadeli sözleşmesi yok");
+  const open = await positionsNow(c); if (open.some(p => p.symbol === m.symbol)) return { skipped: "bu sembolde zaten açık pozisyon var" };
+  try { dual = !!(await signed("GET", "/fapi/v1/positionSide/dual", {}, c)).dualSidePosition; } catch(e){ dual = false; }
+  const L = S.dir === "LONG", a = S.active, cfg = Object.assign(ENGINE.config(), cfgOverride || {});
+  let px = d.price; try { px = +(await pub("/fapi/v1/ticker/price?symbol=" + m.symbol, c)).price || px; } catch(e){}
+  const st = a.stop, tg = a.target; if (L ? !(st < px && tg > px) : !(st > px && tg < px)) return { skipped: "fiyat stop/hedef aralığının dışında" };
+  const rpu = Math.abs(px - st); let qty = Math.min(cfg.max_loss_per_trade/rpu, cfg.account_size*cfg.position_cap_pct/100*lev/px);
+  let avail = null; try { const ac = await signed("GET", "/fapi/v2/account", {}, c); avail = +(((ac.assets || []).find(x => x.asset === "USDT") || {}).availableBalance ?? ac.availableBalance); } catch(e){}
+  if (avail !== null && isFinite(avail)) qty = Math.min(qty, avail*lev*0.9/px);
+  qty = +floorStep(qty, m.step, m.qdec); const notional = qty*px;
+  if (qty < m.minQty || notional < m.minNotional) return { skipped: `miktar çok küçük ($${notional.toFixed(2)} < min $${m.minNotional})` };
+  try { await signed("POST", "/fapi/v1/leverage", { symbol: m.symbol, leverage: lev }, c); } catch(e){}
+  const ps = dual ? { positionSide: L ? "LONG" : "SHORT" } : {};
+  const o = await wsCall("order.place", Object.assign({ symbol: m.symbol, side: L ? "BUY" : "SELL", type: "MARKET", quantity: qty.toFixed(m.qdec), newOrderRespType: "RESULT" }, ps), c);
+  window.BUS && BUS.emit("order", { to: "bn" });
+  const ids = JSON.parse(localStorage.getItem("neon.algo." + (c.testnet ? "t" : "m")) || "{}"); ids[m.symbol] = ids[m.symbol] || []; const prot = [];
+  for (const [type, price, name] of [["STOP_MARKET", st, "Stop"], ["TAKE_PROFIT_MARKET", tg, "Hedef"]]){
+    try { const r = await wsCall("algoOrder.place", Object.assign({ algoType: "CONDITIONAL", symbol: m.symbol, side: L ? "SELL" : "BUY", type, triggerPrice: roundTick(price, m.tick, m.pdec), closePosition: "true", workingType: "MARK_PRICE" }, ps), c);
+      ids[m.symbol].push(r.algoId); prot.push(name + " ✔"); } catch(e){ prot.push(name + " ✖ " + trErr(e)); } }
+  localStorage.setItem("neon.algo." + (c.testnet ? "t" : "m"), JSON.stringify(ids));
+  return { symbol: m.symbol, side: S.dir, qty, px: +o.avgPrice || px, notional, margin: notional/lev, stop: st, target: tg, orderId: o.orderId, testnet: c.testnet, prot }; }
+async function autoClose(sym){ const c = bget(); const list = (await positionsNow(c)).filter(p => p.symbol === sym); let n = 0;
+  for (const p of list){ const amt = +p.positionAmt, prm = { symbol: sym, side: amt > 0 ? "SELL" : "BUY", type: "MARKET", quantity: String(Math.abs(amt)), newOrderRespType: "RESULT" };
+    if ((p.positionSide || "BOTH") !== "BOTH") prm.positionSide = p.positionSide; else prm.reduceOnly = "true"; await wsCall("order.place", prm, c); n++; }
+  try { await cancelAll(sym, true); } catch(e){} return n; }
+async function realized(sym, since){ const c = bget(); const r = await signed("GET", "/fapi/v1/income", { symbol: sym, startTime: since - 60000, limit: 1000 }, c);
+  return (r || []).filter(x => x.incomeType === "REALIZED_PNL" || x.incomeType === "COMMISSION" || x.incomeType === "FUNDING_FEE").reduce((s, x) => s + +x.income, 0); }
 /* ---------------- shell ---------------- */
 function render(){
   const box = $("#trade-box"); if (!box) return;
@@ -393,7 +430,18 @@ let calcT = 0;
 return {
   onAnalysis(d){ const sameBase = D && D.base === d.base; D = d; livePx = null; if (!sameBase){ M = null; ph.tok = null; ph.quote = null; } render(); },
   onTick(p){ livePx = p; if (TAB === "bfx" && $("#bfx-calc") && Date.now() - calcT > 1000){ calcT = Date.now(); calc().catch(() => {}); } },
-  _test: { hmac, trErr, wsCall, signed, meta, bget, bset }
+  _test: { hmac, trErr, wsCall, signed, meta, bget, bset },
+  /* used by BAĞLANTILAR (conn.js) */
+  keys: { bget, bset, prof, pset, pdel },
+  reset(){ acct = null; dual = null; tFor = null; xinfo.t = xinfo.m = undefined; delete xinfo.t; delete xinfo.m; M = null; if (wsc) try { wsc.ws.close(); } catch(e){} wsc = null; render(); },
+  async testProfile(w){ const c = bget(w); if (!c.key || !c.secret) throw new Error("bu bölümde anahtar yok");
+    tFor = null; let a;
+    try { a = await signed("GET", "/fapi/v2/account", {}, c); } catch(e){ if (e.http === 404 || e.code === -5000) a = await signed("GET", "/fapi/v3/account", {}, c); else if (e.name === "TypeError"){ const r = await wsCall("v2/account.balance", {}, c); return { via: "ws", usdt: (r || []).find(x => x.asset === "USDT") || {} }; } else throw e; }
+    tFor = null; const u = (a.assets || []).find(x => x.asset === "USDT") || {};
+    return { via: "rest", usdt: { balance: u.walletBalance, availableBalance: u.availableBalance ?? a.availableBalance, crossUnPnl: a.totalUnrealizedProfit }, canTrade: a.canTrade, pos: (a.positions || []).filter(p => +p.positionAmt !== 0).length }; },
+  trErr, confirmSheet,
+  auto: { order: autoOrder, close: autoClose, positions: () => positionsNow(bget()), realized },
+  ph: { get pk(){ return ph.pk; }, set pk(v){ ph.pk = v; }, prov, rpc, web3, refresh(){ if (TAB === "ph") render(); } }
 };
 })();
 window.TRADE = TRADE;

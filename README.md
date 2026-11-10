@@ -1,14 +1,14 @@
 # NEON//TERMINAL — mobil
 
-Telefonda çalışan, neon/CRT görünümlü kripto analiz terminali. Bir coin yaz (`btc`, `solana`, `init`, `INITUSDT`, `ETH-USD`), Enter'a bas; 11 adımlık day-trader analizi tarayıcının içinde çalışır ve sonuç panoya dökülür.
+Telefonda çalışan, neon/"2100" görünümlü kripto analiz ve işlem terminali (v5). Bir coin yaz (`btc`, `solana`, `init`, `INITUSDT`, `ETH-USD`), Enter'a bas; 11 adımlık day-trader analizi tarayıcının içinde çalışır ve sonuç panoya dökülür.
 
 **Canlı sayfa:** https://twitter67433-oss.github.io/neon-terminal-mobile/
 
-> ⚠️ **Yatırım tavsiyesi değildir. Sinyal garanti değildir.** Analiz kendisi hiçbir emir göndermez. Emir yalnızca **İŞLEM** bölümünde, senin anahtarınla ve her seferinde onay penceresinde **ONAYLA**'ya dokunduğunda gider. Vadeli işlemler kaldıraçlıdır; kayıp teminatı aşabilir.
+> ⚠️ **Yatırım tavsiyesi değildir. Sinyal garanti değildir.** Elle her işlem onay penceresinde **ONAYLA**'ya dokunduğunda gider. **OTO AL-SAT varsayılan olarak KAPALI**dır; açarsan bot yalnızca BOT CÜZDANI'ndaki parayla, koyduğun limitler içinde onay sormadan işlem yapar. pump.fun tokenlarının büyük çoğunluğu kısa sürede değerini neredeyse tamamen kaybeder; vadeli işlemler kaldıraçlıdır.
 
 ## Nasıl çalışır
 
-Tamamen statik (HTML/CSS/JS). Sunucu yok, hesap yok; API anahtarı yalnızca İŞLEM bölümünü kullanırsan gerekir. Tüm veriler tarayıcıdan doğrudan herkese açık API'lerden çekilir:
+Tamamen statik (HTML/CSS/JS). Sunucu yok, arka uç yok, hesap yok — her şey telefonun tarayıcısında çalışır; API anahtarı yalnızca işlem yaparsan gerekir. Tüm veriler tarayıcıdan doğrudan herkese açık API'lerden çekilir:
 
 | # | Adım | Veri / yöntem |
 |---|------|---------------|
@@ -26,7 +26,7 @@ Tamamen statik (HTML/CSS/JS). Sunucu yok, hesap yok; API anahtarı yalnızca İ�
 
 ## Veri kaynağı: Binance USDⓈ-M Futures (PERP)
 
-Tüm piyasa verisi (analiz, grafik, sinyal, alarmlar, büyüklük, canlı fiyat, şerit) emirlerin gittiği **vadeli perpetual sözleşmeden** gelir: `fapi.binance.com` (`/fapi/v1/exchangeInfo`, `/klines`, `/ticker/24hr`, `/ticker/price`, `/premiumIndex`) ve `wss://fstream.binance.com/market/stream` (`@aggTrade`, `@kline_1m`, `@ticker`, `@markPrice@1s`). Kahraman alanında son fiyat, **Mark fiyatı, fonlama oranı ve sonraki fonlamaya geri sayım** görünür. Fiyatlar sözleşmenin `tickSize` değerine göre biçimlenir; stop/hedef bu adıma yuvarlanır. `PEPE` yazınca `1000PEPEUSDT` gibi kontratlar otomatik bulunur (1 kontrat = 1000 PEPE).
+Tüm piyasa verisi (analiz, grafik, sinyal, alarmlar, büyüklük, canlı fiyat, şerit) emirlerin gittiği **vadeli perpetual sözleşmeden** gelir: `fapi.binance.com` (`/fapi/v1/exchangeInfo`, `/klines`, `/ticker/24hr`, `/ticker/price`, `/premiumIndex`) ve `wss://fstream.binance.com/market/stream` (`@aggTrade`, `@kline_<tf>`, `@ticker`, `@markPrice@1s`, `@forceOrder`). Kahraman alanında son fiyat, **Mark fiyatı, fonlama oranı ve sonraki fonlamaya geri sayım** görünür. Fiyatlar sözleşmenin `tickSize` değerine göre biçimlenir; stop/hedef bu adıma yuvarlanır. `PEPE` yazınca `1000PEPEUSDT` gibi kontratlar otomatik bulunur (1 kontrat = 1000 PEPE).
 
 Futures'a ulaşılamazsa (ör. HTTP 451 bölge kısıtı) ya da coinin perpetual'i yoksa veri spot'tan alınır ve kırmızı **"⚠ SPOT verisi (Futures erişilemedi)"** rozeti gösterilir; iki kaynak hiçbir zaman sessizce karıştırılmaz. Testnet'te işlem yaparken onay penceresi testnet mark fiyatını da gösterir (testnet fiyatı gerçek piyasadan farklı olabilir).
 
@@ -40,31 +40,65 @@ Her analizden sonra panonun üstünde bir sinyal kartı çıkar: yön, güven y�
 
 Fiyat, 24s değişim, mark/fonlama, grafikteki son mum, alarmlar ve "son güncelleme" saati Binance Futures WebSocket akışıyla her işlemde güncellenir; çizim saniyede ~8 kez yapılır. Önce `fstream.binance.com/market/stream`, olmazsa eski `/stream` yolu denenir (veri gelmezse 7 sn içinde geçer); bağlantı koparsa artan beklemeyle yeniden bağlanır, bu sırada 2 saniyelik REST yoklamasına düşer. Göstergeler: **● CANLI** (WebSocket), **● CANLI (REST 2sn)**.
 
-## İŞLEM bölümü
+## v5 · "2100" arayüz
 
-### Binance USDⓈ-M Vadeli (LONG + SHORT)
-- **Testnet** varsayılan olarak AÇIK (test parası). Kapatırsan gerçek hesap kullanılır ve her yerde kırmızı **GERÇEK PARA** yazar.
-- Bakiye ve açık pozisyonlar (`/fapi/v2/account`, `/fapi/v2/positionRisk`), kaldıraç seçimi (1x varsayılan, en çok 20x, 3x üstünde uyarı).
-- PİYASA emri LONG (BUY) veya SHORT (SELL). Miktar ⚙ ayarlarındaki max zarar ve pozisyon tavanından hesaplanır, Binance'in adım/min miktar/min tutar kurallarına yuvarlanır; elle de girilebilir.
-- İsteğe bağlı stop ve hedef: `STOP_MARKET` / `TAKE_PROFIT_MARKET`, `closePosition=true` (Binance'in Algo Order servisi). Pozisyonu kapat ve açık emirleri iptal düğmeleri.
-- **Her emirde onay penceresi**: sembol, yön, miktar, tutar, kaldıraç, stop, hedef, mod. ONAYLA'ya dokunmadan hiçbir şey gitmez. Otomatik emir yoktur.
-- Okumalar REST ile, emirler Binance WebSocket API (`ws-fapi`) ile imzalanıp gönderilir (testnet'in REST emir uçları tarayıcı CORS kontrolünü geçmiyor). İmza: HMAC-SHA256, WebCrypto ile cihazda; saat `/fapi/v1/time` ile eşitlenir, `recvWindow=5000`.
+- **Veri yolu (ışınlar):** üstteki canvas'ta BINANCE, PUMP.FUN, MOTOR, SİNYAL, RİSK, EMİR, PHANTOM ve BOT düğümleri arasında ışık parçacıkları akar. Her parçacık **gerçek bir olaydır**: fiyat tiki, likidasyon, sinyal, emir, yeni pump.fun tokenı, bot işlemi. `requestAnimationFrame` ile çizilir, sekme arka plandayken durur; `prefers-reduced-motion` açıksa animasyon kapanır, yalnızca durum gösterilir.
+- **Binance tarzı grafik:** 1dk · 3dk · 5dk · 15dk · 30dk · 1s · 2s · 4s · 6s · 8s · 12s · 1G · 3G · 1H · 1A zaman dilimleri (Futures `klines`, 1000/500 mum) + canlı `@kline_<tf>` WebSocket. Mumlar, hacim histogramı, EMA20/EMA50, VWAP (UTC gün içi), sinyalin giriş/stop/hedef çizgileri, açılış aralığı kutusu ve TETİK işareti; açık/kapalı düğmeleri. Seçim cihazda saklanır.
+- **Mark / fonlama / geri sayım** aynen duruyor.
 
-**Güvenlik:**
-1. Binance'te yalnızca **Futures (Vadeli)** izni açık bir API anahtarı oluştur. **Para çekme izni KAPALI** olsun.
-2. Telefonun IP'si değiştiği için IP kısıtlaması çoğu zaman uygulanamaz; kısıtsız anahtar daha risklidir, işin bitince sil.
-3. Anahtar ve secret **yalnızca bu cihazın localStorage'ında** durur ve sadece Binance'e gider (secret hiç gönderilmez, yalnızca imza üretir). "ANAHTARLARI SİL" tamamen temizler.
-4. Önce testnet'te dene: https://testnet.binancefuture.com
+## Ek paneller (v5)
 
-### Phantom (Solana, yalnızca spot)
-- "PHANTOM'U BAĞLA" (`window.phantom.solana`). Phantom yoksa siteyi Phantom uygulamasının tarayıcısında açan bağlantı gösterilir.
-- SOL / USDC (ve bulunursa analiz edilen coinin Solana tokenı) bakiyeleri, halka açık Solana RPC ile.
-- Jupiter (`lite-api.jup.ag/swap/v1`) teklifi: alınacak miktar, en az miktar, fiyat etkisi, kayma (varsayılan %0,5). Onay penceresinden sonra işlemi **Phantom'da sen imzalarsın** (`signAndSendTransaction`). Mint adresi elle yapıştırılabilir.
-- Phantom ile short ve kaldıraç yoktur.
+| # | Panel | Kaynak |
+|---|-------|--------|
+| 12 | Derinlik ısı haritası + likidasyonlar | `/fapi/v1/depth` (500 kademe, 4 sn) zaman×fiyat ısı haritası, en büyük alış/satış duvarları, dengesizlik; `@forceOrder` canlı likidasyon noktaları |
+| 13 | Açık pozisyon + long/short | `futures/data/openInterestHist`, `globalLongShortAccountRatio`, `topLongShortPositionRatio`, `takerlongshortRatio` |
+
+Ses + titreşim uyarıları: sinyal, fiyatın giriş/stop/hedefi geçmesi, bot işlemleri (BOT bölümünden kapatılabilir).
+
+## BAĞLANTILAR → BINANCE: TEST API ve GERÇEK API
+
+- İki ayrı anahtar yuvası: **TEST API (Testnet)** ve kırmızı **GERÇEK API**. Her biri ayrı localStorage anahtarında durur; "aktif hesap" düğmesiyle hangisinin kullanılacağı seçilir.
+- **Bağlantıyı test et**: imzalı istekle USDT bakiyesini gösterir.
+- GERÇEK'i aktif yapmak için ekrana **GERÇEK** yazman gerekir; her yerde kırmızı GERÇEK PARA etiketi çıkar.
+- Binance'te yalnızca **Futures (Vadeli) iznini** aç, **para çekme iznini KAPALI** bırak. Anahtar ve secret yalnızca bu cihazda durur; secret hiçbir yere gönderilmez, yalnızca imza üretir. Önce testnet'te dene: https://testnet.binancefuture.com
+
+## İŞLEM bölümü (elle)
+
+- Binance USDⓈ-M: PİYASA LONG/SHORT, isteğe bağlı `STOP_MARKET` / `TAKE_PROFIT_MARKET` (Algo Order), kaldıraç (1x varsayılan), pozisyon kapatma. Emirler `ws-fapi` ile imzalanıp gönderilir (HMAC-SHA256, WebCrypto, cihazda).
+- Phantom: Jupiter spot swap, Phantom'da sen imzalarsın.
+- **Her elle işlemde ONAYLA penceresi** çıkar; dokunmadan hiçbir şey gitmez.
+
+## PUMP.FUN — yeni coinler (canlı)
+
+- Akış: PumpPortal WebSocket `wss://pumpportal.fun/api/data` → `subscribeNewToken` (anahtarsız, ücretsiz) + `subscribeMigration`. Satırda görsel, ad, sembol, mint, piyasa değeri (SOL + USD, SOL fiyatı Jupiter'den), yaratıcı, yaş, pump.fun / Solscan bağlantıları, **rug riski** puanı.
+- Metadata (görsel, X/Telegram/web) IPFS'ten: `gateway.pinata.cloud` → `ipfs.4everland.io` → `pump.mypinata.cloud` (ipfs.io/dweb.link tarayıcıya 429 veriyor). Bazı tokenlar CORS'suz sunuculara metadata koyuyor; onlar "metadata okunamadı" diye işaretlenir.
+- Satıra dokununca detay: canlı piyasa değeri, bonding curve doluluk %, mini grafik, **canlı işlemler**. Tam işlem akışı (`subscribeTokenTrade`) PumpPortal'da en az 0,02 SOL yüklü bir API anahtarı ister; anahtar yoksa canlı mcap ve al/sat hareketleri bonding curve hesabından Solana RPC WebSocket (`accountSubscribe`) ile çözülür. İsteğe bağlı anahtar yalnızca cihazda saklanır.
+- **Rug riski (0–100, sezgisel)**: geliştirici payı, sosyal hesap yok, görsel yok, seri yaratıcı, kopya isim, mcap düşüşü, ilk 10 sahip payı, mint/dondurma yetkisi, **standart dışı bonding curve** (bazı yeni curve'ler 30 yerine çok farklı sanal SOL ile başlıyor; gerçek fiyat PumpPortal'ın mcap'inden çok farklıdır).
+- AL / SAT: PumpPortal **trade-local** (`POST /api/trade-local`, CORS açık) imzasız işlemi döndürür; **PHANTOM** seçiliyse Phantom imzalar, **BOT CÜZDANI** seçiliyse bot cihazda imzalar. Kayma % ve öncelik ücreti ayarlanır. Her elle işlemde ONAYLA penceresi.
+- pump.fun'ın kendi API'si (`frontend-api-v3.pump.fun`) Cloudflare korumalı ve tarayıcıya 403 veriyor; kullanılmıyor.
+
+## BOT — cüzdan, OTO AL-SAT, günlük
+
+### BOT CÜZDANI
+- Anahtar çifti **tarayıcıda üretilir** (`@solana/web3.js` Keypair). Gizli anahtar **PIN ile şifrelenir** (PBKDF2-SHA256 300.000 tur → AES-256-GCM, WebCrypto) ve localStorage'da yalnızca şifreli durur. Sayfa yenilenince kilitlidir.
+- Adres + QR kodu, SOL ve token bakiyeleri. **Phantom'dan yükle** (Phantom'da sen onaylarsın), **Phantom'a geri çek** (tümü, ücret payı bırakılır, onay penceresi), **Gizli anahtarı yedekle** (PIN ister, uyarı gösterir, 60 sn görünür), içe aktarma, silme.
+- Bot pump.fun (trade-local) ve Jupiter işlemlerini **cihazda kendisi imzalar**; ücret ödeyicisinin bot adresi olduğu kontrol edilir.
+- ⚠️ Bu bir "sıcak cüzdan"dır: yalnızca kaybetmeyi göze aldığın küçük bir miktar yükle. Tarayıcı verisi silinirse ve yedeğin yoksa para kaybolur.
+
+### OTO AL-SAT (varsayılan KAPALI)
+- Açarken bir kez risk uyarısı (onay kutusu), ardından limit özeti için ONAYLA. Sayfa her açıldığında OTO yine KAPALI başlar.
+- **Yalnızca BOT CÜZDANI** kullanır; Phantom'a asla otomatik işlem gönderilmez.
+- Varsayılan limitler: işlem başı 0,05 SOL, toplam bütçe 0,5 SOL, günlük max zarar 0,25 SOL, en çok 3 açık pozisyon, kâr al +%50, zarar kes −%25, max tutma 15 dk.
+- Giriş filtreleri: geliştiricinin ilk alımı ≥ 0,3 SOL, mcap 27–70 SOL, sosyal hesap şartı, dev payı ≤ %10, rug riski ≤ 45, yaratıcı kara listesi; seri yaratıcı ve standart dışı curve elenir; **N saniye (20) bekleyip** momentum ≥ %8 ise alır.
+- Çıkış: TP / SL / max tutma / curve tamamlandı; satış 3 kez denenir.
+- **Binance oto**: analiz edilen coinin LONG/SHORT sinyali güven eşiğini (%65) geçerse bütçe kurallarına göre MARKET + STOP_MARKET + TAKE_PROFIT_MARKET. Testnet serbest; **GERÇEK hesapta yalnızca ayrı "Binance GERÇEK'te oto" kutusu (varsayılan kapalı) işaretlenip GERÇEK yazılarak onaylanırsa** çalışır. Günde en çok 3 işlem, 5 dk'da bir yeniden analiz.
+- Kırmızı **HEPSİNİ DURDUR** (her zaman ekranın köşesinde): tüm otoları kapatır, isteğe bağlı bot pozisyonlarını satar / Binance oto pozisyonlarını kapatır.
+- Oto **yalnızca sayfa ön plandayken** çalışır (tarayıcı sınırı). Ekranın kilitlenmemesi için Wake Lock istenir; sekme arka plana geçerse uyarı verir.
+- **GÜNLÜK**: her işlem (elle/oto, pump.fun/Binance) giriş/çıkış, PnL, sebep ve imza ile kaydedilir; **CSV indir**.
 
 ## English (short)
 
-Static, client-only crypto day-trading terminal. After each analysis it shows a LONG / SHORT / WAIT signal card with confidence and entry/stop/2R target (a heuristic, **not a guarantee**). Prices stream live over Binance WebSocket (REST 2 s fallback). The **İŞLEM** (trade) section can place Binance USDⓈ-M futures market orders (long or short, optional reduce-only stop/take-profit via the Algo Order service) and Jupiter spot swaps signed in Phantom. Testnet is on by default; every order or swap needs a confirmation sheet and a tap on ONAYLA; nothing is ever placed automatically. API keys are stored only in the device's localStorage, are only sent to Binance, and the secret only signs locally. Create a futures-only key with withdrawals disabled.
+Static, client-only crypto terminal for phones (no server, no backend). v5 adds: a "2100" data-bus canvas whose light particles are real events; a Binance-style futures chart with every timeframe 1m…1M, volume, EMA/VWAP and signal lines; a depth/liquidation heatmap, open interest and long/short ratios; separate TEST (testnet) and REAL Binance API key slots with a balance test and a typed confirmation for REAL; a live pump.fun new-token feed (PumpPortal WebSocket, live curve trades via Solana RPC, heuristic rug-risk score) with buy/sell via PumpPortal trade-local signed by Phantom or by the bot wallet; a PIN-encrypted in-browser **bot wallet** (PBKDF2 + AES-GCM); and **auto-trading that is OFF by default**, uses only the bot wallet, has hard limits (0.05 SOL/trade, 0.5 SOL budget, TP +50 %, SL −25 %, max 3 positions, daily loss cap), a kill switch, and runs only while the page is in the foreground. Binance auto on a REAL account needs a separate opt-in. Every manual trade needs a tap on ONAYLA. Not investment advice; meme coins are extremely risky.
 
 ## Bağlantılar
 
@@ -83,6 +117,6 @@ python3 -m http.server 8000
 
 Analiz yöntemi (tarayıcı kuralları, açılış aralığı girişi, çıkış planı, zaman makinesi, bütçe ve risk kuralları), [Jakeschincariol/day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill) (MIT Lisansı, © 2026 Jake Schincariol) projesinden kriptoya (7/24) uyarlanarak JavaScript'e taşınmıştır. Ayrıntılar: [NOTICE.md](NOTICE.md).
 
-Grafikler [TradingView Lightweight Charts™](https://github.com/tradingview/lightweight-charts) (Apache-2.0) ile çizilir; kütüphane `vendor/` klasöründe yerel olarak bulunur. Yazı tipleri: Orbitron, Share Tech Mono, JetBrains Mono (SIL Open Font License).
+Grafikler [TradingView Lightweight Charts™](https://github.com/tradingview/lightweight-charts) (Apache-2.0) ile çizilir; QR kodu qrcode-generator (MIT); kütüphaneler `vendor/` klasöründe yerel olarak bulunur. Veri: Binance, PumpPortal, Solana RPC (publicnode / Tatum), IPFS ağ geçitleri, Jupiter, CoinGecko. Yazı tipleri: Orbitron, Share Tech Mono, JetBrains Mono (SIL Open Font License).
 
 Bu depo MIT Lisansı ile yayımlanır — bkz. [LICENSE](LICENSE).

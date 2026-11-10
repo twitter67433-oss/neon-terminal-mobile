@@ -37,10 +37,10 @@ loadTape(); setInterval(loadTape, 30000);
 
 /* ---------------- boot ---------------- */
 const BOOT = [
- ["NEON//BIOS v11.0 mobil  (c) 2026", ""], ["11 beceri çekirdeği ..................", "ok"],
+ ["NEON//BIOS 2100 · v5  (c) 2026", ""], ["11 beceri çekirdeği ..................", "ok"],
  ["Binance public API hattı .............", "ok"], ["CoinGecko analist modülü .............", "ok"],
  ["Zaman makinesi worker'ı ..............", "ok"], ["7/24 kripto seans adaptörü ...........", "ok"],
- ["Canlı akış (WebSocket) ................", "ok"], ["Emir motoru ........ YALNIZ ONAYLA İLE", "warn"], ["Cüzdan ......... YALNIZ SEN BAĞLARSAN", "warn"],
+ ["Canlı akış (WebSocket) ................", "ok"], ["Veri yolu · ışık ağı ..................", "ok"], ["pump.fun canlı akış (PumpPortal) ......", "ok"], ["BOT CÜZDANI ....... PIN İLE ŞİFRELİ", "warn"], ["OTO AL-SAT ................. KAPALI", "warn"], ["Emir motoru ........ YALNIZ ONAYLA İLE", "warn"], ["Cüzdan ......... YALNIZ SEN BAĞLARSAN", "warn"],
  ["Sistem hazır. Bir coin yaz ve Enter'a bas.", ""],
 ];
 async function boot(){
@@ -70,7 +70,7 @@ document.addEventListener("click", e => { if (!e.target.closest("a,button,input,
 $("#cmd").addEventListener("submit", e => { e.preventDefault(); const v = inp.value.trim(); if (v) run(v); });
 
 /* ---------------- run ---------------- */
-let CUR = null, chart = null, cseries = null, liveTimer = null, running = false;
+let CUR = null, liveTimer = null, running = false;
 function buildSteps(){
   $("#steps").innerHTML = STEP_NAMES.map((n,i) => `<div class="step ${i?'wait':''}" id="st${i+1}"><span class="sn">${String(i+1).padStart(2,"0")}</span><span class="st">${n}</span><span class="spin"></span></div>`).join("");
 }
@@ -140,11 +140,15 @@ function render(d, steps){
   if (D.signal) b.push(`<span class="badge" style="color:${D.signal.dir==="LONG"?"#39ff14":D.signal.dir==="SHORT"?"#ff3355":"#ffe600"}">SİNYAL: ${D.signal.dir}</span>`);
   $("#h-badges").innerHTML = b.join("");
   try { renderSignal(D.signal, d); } catch(e){ console.error(e); $("#signal").innerHTML = `<div class="err-line">✖ sinyal çizilemedi: ${esc(e.message)}</div>`; }
+  try { window.BUS && BUS.emit("signal", { dir: D.signal ? D.signal.dir : "BEKLE" }); } catch(e){}
+  try { if (D.signal && D.signal.dir !== "BEKLE" && window.NOTIFY) NOTIFY.ping("info", `${d.symbol} sinyal: ${D.signal.dir} · güven %${D.signal.conf}`, true); } catch(e){}
+  try { window.AUTO && AUTO.onAnalysis(d); } catch(e){ console.error(e); }
   try { window.TRADE && TRADE.onAnalysis(d); } catch(e){ console.error(e); }
-  const order = [[".p-chart",1],[".p-rsi",1],[".p-entry",3],[".p-plan",4],[".p-tm",5],[".p-budget",6],[".p-risk",7],[".p-ticket",8],[".p-alerts",9],[".p-analyst",10],[".p-congress",11],[".p-news",2]];
+  const order = [[".p-chart",1],[".p-rsi",1],[".p-entry",3],[".p-plan",4],[".p-tm",5],[".p-budget",6],[".p-risk",7],[".p-ticket",8],[".p-alerts",9],[".p-analyst",10],[".p-congress",11],[".p-news",2],[".p-mkt",12],[".p-oi",13]];
   order.forEach(([s], i) => setTimeout(() => document.querySelector(s).classList.add("show"), 80*i));
   const safe = (fn, sel, n) => { try { fn(); } catch(e){ console.error(e); document.querySelector(sel).querySelector("h3").insertAdjacentHTML("afterend", panelFail(sel,{error:"çizim hatası: "+e.message})); } };
-  safe(() => renderChart(d, "5m"), ".p-chart");
+  safe(() => CHART.render(d).catch(e => { $(".p-chart h3").insertAdjacentHTML("afterend", panelFail(".p-chart", { error: "grafik: " + e.message })); }), ".p-chart");
+  try { window.MARKET && MARKET.onAnalysis(d); } catch(e){ console.error(e); }
   safe(() => D.scan ? renderRSI(D.scan) : ($("#scan-info").innerHTML = panelFail(".p-rsi", steps[1])), ".p-rsi");
   safe(() => $("#entry-box").innerHTML = D.entry ? entryHTML(D.entry) : panelFail(".p-entry", steps[3]), ".p-entry");
   safe(() => $("#plan-box").innerHTML = D.plan ? planHTML(D.plan, d.price) : panelFail(".p-plan", steps[4]), ".p-plan");
@@ -180,48 +184,6 @@ function renderSignal(S, d){
      <div class="plan-foot">LONG seviyeleri: giriş ${fmtP(S.levels.long.entry)} · stop ${fmtP(S.levels.long.stop)} · hedef ${fmtP(S.levels.long.target)}<br>SHORT seviyeleri: giriş ${fmtP(S.levels.short.entry)} · stop ${fmtP(S.levels.short.stop)} · hedef ${fmtP(S.levels.short.target)}</div></details>
    <div class="sg-foot"><span>⚠ sinyal, garanti değil · yatırım tavsiyesi değildir</span><button type="button" id="sig-trade">İŞLEM ↓</button></div>`;
   $("#sig-trade").addEventListener("click", () => { const t = $("#trade"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); });
-}
-
-/* chart */
-let chartTF = "5m";
-document.querySelectorAll(".p-chart .tabs button").forEach(b => b.addEventListener("click", () => {
-  document.querySelectorAll(".p-chart .tabs button").forEach(x => x.classList.toggle("on", x === b)); if (CUR) renderChart(CUR, b.dataset.tf); }));
-function chartPlan(D){ return D.signal && D.signal.dir === "SHORT" ? D.signal.active : D.plan; }
-function renderChart(d, tf){
-  chartTF = tf; const el = $("#chart"); const D = d.data;
-  if (chart){ chart.remove(); chart = null; }
-  const raw = tf === "1h" ? d.bars1h : d.bars5m; if (!raw || !raw.length) throw new Error("mum verisi yok");
-  const off = tzOffset(raw[raw.length-1][0]);
-  chart = LightweightCharts.createChart(el, { autoSize: true,
-    layout: { background: { type: "solid", color: "transparent" }, textColor: "#6fa5b5", fontFamily: "Share Tech Mono, monospace" },
-    grid: { vertLines: { color: "#0e2230" }, horzLines: { color: "#0e2230" } },
-    crosshair: { mode: 0, vertLine: { color: "#ff2bd6", labelBackgroundColor: "#ff2bd6" }, horzLine: { color: "#00f0ff", labelBackgroundColor: "#00a8b5" } },
-    rightPriceScale: { borderColor: "#12324a" }, timeScale: { borderColor: "#12324a", timeVisible: true, secondsVisible: false } });
-  const prec = PX_DEC !== null ? PX_DEC : d.price >= 1000 ? 2 : d.price >= 1 ? 4 : d.price >= 0.01 ? 5 : 8;
-  cseries = chart.addCandlestickSeries({ upColor: "#39ff14", downColor: "#ff3355", borderUpColor: "#39ff14", borderDownColor: "#ff3355",
-    wickUpColor: "#39ff14aa", wickDownColor: "#ff3355aa", priceFormat: { type: "price", precision: prec, minMove: Math.pow(10,-prec) },
-    autoscaleInfoProvider: orig => { const r = orig(); const P = chartPlan(D); if (r && P) { const pr = r.priceRange;
-      pr.minValue = Math.min(pr.minValue, P.stop, P.target, P.entry); pr.maxValue = Math.max(pr.maxValue, P.stop, P.target, P.entry); } return r; } });
-  cseries.setData(raw.map(b => ({ time: b[0] + off, open: b[1], high: b[2], low: b[3], close: b[4] })));
-  const P = chartPlan(D); if (P){ const L = (p,c,t,s) => cseries.createPriceLine({ price: p, color: c, lineWidth: 2, lineStyle: s, axisLabelVisible: true, title: t });
-    const pre = P.side === "short" ? "SHORT " : ""; L(P.target, "#39ff14", pre + "HEDEF", 2); L(P.entry, "#00f0ff", pre + "GİRİŞ", 0); L(P.stop, "#ff3355", pre + "STOP", 2); }
-  if (D.entry && D.entry.trigger){ const step = tf === "1h" ? 3600 : 300; const t = Math.floor((D.entry.trigger.t - 300)/step)*step + off;
-    if (raw.some(b => b[0] + off === t)) cseries.setMarkers([{ time: t, position: "belowBar", color: "#ffe600", shape: "arrowUp", text: "TETİK" }]); }
-  if (tf === "1h") chart.timeScale().setVisibleLogicalRange({ from: raw.length - 120, to: raw.length + 4 });
-  else chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, raw.length - 300), to: raw.length + 6 });
-  const cv = $("#orbox"); el.appendChild(cv);
-  const draw = () => { const r = el.getBoundingClientRect(); cv.width = r.width; cv.height = r.height; const g = cv.getContext("2d"); g.clearRect(0,0,cv.width,cv.height);
-    if (!D.entry) return; const ts = chart.timeScale();
-    let x1 = ts.timeToCoordinate(Math.floor(D.entry.or_start/(tf==="1h"?3600:300))*(tf==="1h"?3600:300) + off);
-    let x2 = ts.timeToCoordinate(D.entry.or_end + off - (tf==="1h"?0:300));
-    if (x1 === null && x2 === null) return; if (x1 === null) x1 = 0; if (x2 === null) x2 = cv.width - 60;
-    if (tf === "1h" && x2 - x1 < 6) x2 = x1 + Math.max(6, ts.options().barSpacing || 6);
-    const y1 = cseries.priceToCoordinate(D.entry.or_high), y2 = cseries.priceToCoordinate(D.entry.or_low); if (y1 === null || y2 === null) return;
-    g.fillStyle = "rgba(255,230,0,0.10)"; g.strokeStyle = "rgba(255,230,0,0.85)"; g.lineWidth = 1; g.setLineDash([4,3]);
-    g.fillRect(x1, y1, Math.max(2,x2-x1), y2-y1); g.strokeRect(x1, y1, Math.max(2,x2-x1), y2-y1);
-    g.setLineDash([]); g.fillStyle = "#ffe600"; g.font = "11px Share Tech Mono"; g.fillText("AÇILIŞ ARALIĞI", x1 + 3, y1 - 4); };
-  chart.timeScale().subscribeVisibleLogicalRangeChange(() => requestAnimationFrame(draw));
-  new ResizeObserver(() => requestAnimationFrame(draw)).observe(el); setTimeout(draw, 60); setTimeout(draw, 400);
 }
 
 /* rsi gauge */
@@ -347,10 +309,16 @@ function renderAlerts(price, first){
    <div class="plan-foot">Kapat saati: ${tLocal(a.flat_by_ts)} ${TZL} · Fiyat Binance WebSocket ile her işlemde (saniyede birkaç kez) güncellenir.</div>`;
   lastPrice = price;
 }
+/* sound / vibration when the live price crosses entry / stop / target (NOTIFY in auto.js) */
+const crossed = {};
+function levelCross(a, b){ if (a === null || b === null || !CUR || !CUR.data.alerts) return; const L = CUR.data.alerts.levels;
+  for (const [k, n] of [["entry", "GİRİŞ"], ["stop", "STOP"], ["target", "HEDEF"]]){ const v = L[k]; if (!v) continue;
+    if ((a < v && b >= v) || (a > v && b <= v)){ const key = CUR.symbol + k; if (crossed[key] && Date.now() - crossed[key] < 60000) continue; crossed[key] = Date.now();
+      window.NOTIFY && NOTIFY.ping(k === "stop" ? "bad" : "good", `${CUR.symbol} ${n} seviyesini geçti: ${fmtP(b)}`); } } }
 /* ---------------- realtime: Binance WebSocket (trade + kline_1m + ticker), REST 2s fallback ---------------- */
 /* futures: Binance moved USDⓈ-M market streams to /market (the legacy /stream path opens but stays silent), so try /market first */
-const WS = { fut: { hosts: ["wss://fstream.binance.com/market/stream", "wss://fstream.binance.com/stream"], streams: s => `${s}@aggTrade/${s}@kline_1m/${s}@ticker/${s}@markPrice@1s` },
-  spot: { hosts: ["wss://stream.binance.com:9443/stream", "wss://data-stream.binance.vision/stream"], streams: s => `${s}@trade/${s}@kline_1m/${s}@ticker` } };
+const WS = { fut: { hosts: ["wss://fstream.binance.com/market/stream", "wss://fstream.binance.com/stream"], streams: s => `${s}@aggTrade/${s}@kline_${CHART.tf}/${s}@ticker/${s}@markPrice@1s/${s}@forceOrder` },
+  spot: { hosts: ["wss://stream.binance.com:9443/stream", "wss://data-stream.binance.vision/stream"], streams: s => `${s}@trade/${s}@kline_${CHART.tf}/${s}@ticker` } };
 const wsSrc = () => (CUR && CUR.src === "spot") ? "spot" : "fut", WS_HOSTS = { get length(){ return WS[wsSrc()].hosts.length; } };
 const LIVE = { on: false, sym: null, ws: null, hostI: +(sessionStorage.getItem("neon.wsh4") || 0), mark: null, funding: null, next: null, retry: 0, timer: null, poll: null, pending: false, lastPaint: 0, paintT: null,
   price: null, prev: null, chg: null, hi: null, lo: null, tt: 0, k1: null, mode: "off", ticks: 0 };
@@ -373,7 +341,8 @@ function liveConnect(){
     if (d.e === "trade" || d.e === "aggTrade"){ tick(+d.p, d.T); }
     else if (d.e === "markPriceUpdate"){ LIVE.mark = +d.p; LIVE.funding = +d.r; LIVE.next = +d.T; schedule(); }
     else if (d.e === "24hrTicker"){ LIVE.chg = +d.P; LIVE.hi = +d.h; LIVE.lo = +d.l; if (LIVE.price === null) tick(+d.c, d.E); else schedule(); }
-    else if (d.e === "kline"){ LIVE.k1 = d.k; } };
+    else if (d.e === "kline"){ CHART.onKline(d.k); }
+    else if (d.e === "forceOrder"){ window.MARKET && MARKET.onLiq(d.o); window.BUS && BUS.emit("liq", { side: d.o && d.o.S }); } };
   ws.onerror = () => {};
   ws.onclose = () => { clearTimeout(ot); if (LIVE.ws !== ws) return; wsDown(ws, opened); };
 }
@@ -384,10 +353,13 @@ function startPoll(){ if (LIVE.poll) return; setInd("rest"); const f = async () 
     const src = wsSrc();
     try { const t = await ENGINE.ticker(sym, src); if (LIVE.sym !== sym || LIVE.mode === "ws") return; LIVE.chg = t.chg; LIVE.hi = t.high; LIVE.lo = t.low;
       if (src === "fut") try { const pm = await ENGINE.premium(sym); LIVE.mark = pm.mark; LIVE.funding = pm.funding; LIVE.next = pm.next; } catch(e){}
-      tick(t.price, Date.now()); } catch(e){ setInd("rest"); } };
+      tick(t.price, Date.now()); CHART.poll(); } catch(e){ setInd("rest"); } };
   f(); LIVE.poll = setInterval(f, 2000); }
+/* switch the live kline interval without reconnecting (Binance WS SUBSCRIBE/UNSUBSCRIBE) */
+window.liveResub = (oldS, newS) => { const w = LIVE.ws, s = LIVE.sym && LIVE.sym.toLowerCase(); if (!w || w.readyState !== 1 || !s) return;
+  try { w.send(JSON.stringify({ method: "UNSUBSCRIBE", params: [s + "@" + oldS], id: 1 })); w.send(JSON.stringify({ method: "SUBSCRIBE", params: [s + "@" + newS], id: 2 })); } catch(e){} };
 function stopPoll(){ clearInterval(LIVE.poll); LIVE.poll = null; }
-function tick(p, T){ if (!isFinite(p) || p <= 0) return; LIVE.price = p; LIVE.tt = T || Date.now(); LIVE.ticks++; applyBar(p, LIVE.tt); schedule(); }
+function tick(p, T){ if (!isFinite(p) || p <= 0) return; window.BUS && BUS.emit("tick", { up: LIVE.price === null ? null : p >= LIVE.price }); LIVE.price = p; LIVE.tt = T || Date.now(); LIVE.ticks++; applyBar(p, LIVE.tt); schedule(); }
 function applyBar(p, T){ if (!CUR) return; for (const [key, step] of [["bars5m", 300], ["bars1h", 3600]]){ const raw = CUR[key]; if (!raw || !raw.length) continue;
     const bt = Math.floor(T/1000/step)*step, b = raw[raw.length-1];
     if (bt > b[0]) raw.push([bt, b[4], Math.max(b[4], p), Math.min(b[4], p), p]); else { b[2] = Math.max(b[2], p); b[3] = Math.min(b[3], p); b[4] = p; } } }
@@ -399,9 +371,7 @@ function paint(){ LIVE.pending = false; LIVE.lastPaint = performance.now(); if (
   const hp = $("#h-price"); hp.textContent = fmtP(p); if (prev !== null && p !== prev) flash(hp, p > prev);
   if (LIVE.chg !== null){ const hc = $("#h-chg"); hc.textContent = pct(LIVE.chg) + " 24s"; hc.className = "chg " + cls(LIVE.chg); }
   const hu = $("#h-upd"); if (hu) hu.textContent = "son güncelleme " + new Date(LIVE.tt).toLocaleTimeString("tr-TR",{timeZone:TZ}) + " " + TZL;
-  if (cseries){ const raw = chartTF === "1h" ? CUR.bars1h : CUR.bars5m; const b = raw[raw.length-1]; const off = tzOffset(b[0]);
-    try { cseries.update({ time: b[0]+off, open: b[1], high: b[2], low: b[3], close: b[4] }); } catch(e){} }
-  if (CUR.data.alerts) try { renderAlerts(p, false); } catch(e){}
+  if (CUR.data.alerts) try { renderAlerts(p, false); levelCross(prev, p); } catch(e){}
   const sn = $("#sig-now"); if (sn && CUR.data.signal){ const a = CUR.data.signal.active; sn.innerHTML = `şimdi <b>${fmtP(p)}</b> · girişe ${pct((a.entry/p-1)*100)}`; }
   renderPerp();
   window.TRADE && TRADE.onTick && TRADE.onTick(p);
@@ -453,3 +423,8 @@ $("#sheet-form").addEventListener("submit", e => { e.preventDefault(); const f =
 (async () => { await boot(); mirror(); if (matchMedia("(pointer:fine)").matches) inp.focus(); const q = params.get("coin"); if (q) run(q); else startDemo(); })();
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden && $("#live").checked && CUR && !LIVE.ws){ clearTimeout(LIVE.timer); LIVE.retry = 0; liveConnect(); } });
+/* quiet re-analysis (used by OTO AL-SAT's Binance rescans): no progress screen, just re-render when done */
+async function runQuiet(q){ if (running) return null; running = true; const steps = {}; let done = null;
+  try { await ENGINE.run(q, ev => { if (ev.type === "step") steps[ev.n] = ev; else if (ev.type === "done") done = ev; }); } catch(e){}
+  running = false; if (done){ const y = scrollY; render(done, steps); requestAnimationFrame(() => scrollTo(0, y)); } return done; }
+window.NEON = { runQuiet, get cur(){ return CUR; }, get running(){ return running; } };
