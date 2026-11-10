@@ -76,13 +76,15 @@ const curveOf = m => { const e = ST.curves.get(m); return e && e.c; };
 /* ------------------------- RISK agent ------------------------- */
 function riskSize(src, srcSol){ let base = C.base; if (src === "copy" && C.cp.sizeMode === "ratio" && srcSol) base = srcSol*C.cp.ratio;
   return Math.max(0.001, Math.min(C.maxTrade, base*(R.mult || 1))); }
+const INFL = new Map(); /* buys still in flight (mint → size): counted against max positions / budget / cash so parallel signals cannot overshoot the limits */
+const inflSum = () => [...INFL.values()].reduce((a, x) => a + x, 0);
 function riskCheck(size, mint){ const now = Date.now();
   if (R.pauseUntil > now) return `RİSK arası: ${Math.ceil((R.pauseUntil - now)/60000)} dk kaldı`;
   if (todayPnl() <= -C.dailyLoss) return `günlük max zarar (${C.dailyLoss} SOL) doldu`;
-  if (posGet(mint)) return "bu token zaten açık pozisyonda";
-  if (posList().length >= C.maxPos) return `max açık pozisyon (${C.maxPos}) dolu`;
-  if (deployed() + size > C.budget + 1e-9) return `bütçe dolu (${fmt(deployed(), 3)} / ${C.budget} SOL)`;
-  const cash = cashNow(); if (cash !== null && cash < size + 0.004 + (isReal() ? 0.003 : 0)) return `yetersiz bakiye (${fmt(cash, 4)} SOL)`;
+  if (posGet(mint) || INFL.has(mint)) return "bu token zaten açık pozisyonda";
+  if (posList().length + INFL.size >= C.maxPos) return `max açık pozisyon (${C.maxPos}) dolu`;
+  if (deployed() + inflSum() + size > C.budget + 1e-9) return `bütçe dolu (${fmt(deployed() + inflSum(), 3)} / ${C.budget} SOL)`;
+  const cash = cashNow(); if (cash !== null && cash - inflSum() < size + 0.004 + (isReal() ? 0.003 : 0)) return `yetersiz bakiye (${fmt(cash, 4)} SOL)`;
   if (isReal() && !W().unlocked()) return "BOT CÜZDANI kilitli";
   return null; }
 function riskOnClose(pnl){ if (pnl < 0){ R.losses++; R.consec++; if (C.rules.half && R.mult > 0.25){ R.mult = Math.max(0.25, (R.mult || 1)/2); tl("risk", `◆ RİSK: kayıp sonrası boyut yarıya → <b>${R.mult}x</b>`, "y"); mark("risk", "", 0); }
@@ -96,7 +98,7 @@ async function enter(o){ /* o: { mint, sym, src, wallet, srcSol, tEv, c0, curve,
   const size = o.size || riskSize(o.src, o.srcSol), why = riskCheck(size, o.mint);
   if (why){ if (!o.quiet){ /* same reason (e.g. risk pause) logs at most once a minute, with how many were skipped */ const SK = ST.skipLog || (ST.skipLog = new Map()), k = why.replace(/[\d.,]+/g, "#"), e = SK.get(k), now = Date.now();
       if (!e || now - e.t > 60000){ tl("skip", `⏸ ${esc(o.sym)}: ${esc(why)}${e && e.n ? ` <small>(+${e.n} atlandı)</small>` : ""}`, "dim"); SK.set(k, { t: now, n: 0 }); } else e.n++; } if (/günlük max zarar/.test(why) && ST.on) stop(why); return null; }
-  if (ST.busy.has(o.mint)) return null; ST.busy.add(o.mint); ST.buying++; let watched = false;
+  if (ST.busy.has(o.mint)) return null; ST.busy.add(o.mint); ST.buying++; INFL.set(o.mint, size); let watched = false;
   try { const key = await curveKey(o.mint, o.curve); const e = watchCurve(o.mint, key); watched = true;
     if (!o.manual && C.gk.gate && window.GROK && GROK.ready()){ const g = await GROK.gate(gateInfo(o), C.gk.timeout); ST.gk.n++; ST.gk.last = g;
       if (g.timeout || g.error){ ST.gk.to++; if (C.gk.fallback === "deny"){ tl("grok", `GROK cevap vermedi (${esc(g.error || "zaman aşımı")}) → ${esc(o.sym)} atlandı`, "dim"); return null; } tl("grok", `GROK cevap vermedi (${esc(g.error || "zaman aşımı")}) → kurallarla devam`, "dim"); }
@@ -119,7 +121,7 @@ async function enter(o){ /* o: { mint, sym, src, wallet, srcSol, tEv, c0, curve,
     NOTIFY.ping("good", `${isReal() ? "" : "SIM "}AL ${o.sym} ${fmt(size, 3)} SOL`, !isReal()); ST.orb = 1;
     monitor(o.mint); paint(); return r; }
   catch(e){ tl("err", `✖ ${esc(o.sym)} alım başarısız: ${esc(e.message)}`, "dn"); if (isReal()) NOTIFY.ping("bad", `alım başarısız: ${o.sym}`); return null; }
-  finally { if (watched) unwatchCurve(o.mint); ST.busy.delete(o.mint); ST.buying--; } }
+  finally { INFL.delete(o.mint); if (watched) unwatchCurve(o.mint); ST.busy.delete(o.mint); ST.buying--; } }
 async function exit(mint, why, tEv){ const p = posGet(mint); if (!p || ST.busy.has("s:" + mint)) return null; ST.busy.add("s:" + mint);
   try { const e = ST.curves.get(mint) || watchCurve(mint, p.curve || await curveKey(mint)); const c0 = e.c || await PUMP.curveNow(e.key).catch(() => null); let out, r;
     if (!isReal()){ if (!p.tokens) throw new Error("adet bilinmiyor"); r = await X().sim({ action: "sell", tokens: p.tokens, slip: C.slip, prio: C.prio, sym: p.sym, mint }, () => curveOf(mint), c0, tEv, { src: p.src });
