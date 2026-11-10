@@ -15,7 +15,7 @@ async function bx(path){
   for (let k = 0; k < HOSTS.length; k++){
     const h = HOSTS[(hostIdx + k) % HOSTS.length];
     try {
-      const r = await fetch(h + path);
+      const r = await fetch(h + path, {cache:"no-store"});
       if (r.status === 400){ const j = await r.json().catch(() => ({})); const e = new Error(j.msg || "bad request"); e.code = 400; throw e; }
       if (!r.ok) throw new Error("HTTP " + r.status);
       hostIdx = (hostIdx + k) % HOSTS.length; return await r.json();
@@ -23,7 +23,7 @@ async function bx(path){
   }
   throw new Error("Binance erişilemedi (" + (last && last.message) + ")");
 }
-async function getJSON(url){ const r = await fetch(url); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }
+async function getJSON(url){ const r = await fetch(url, {cache:"no-store"}); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }
 
 const ALIASES = { bitcoin:"BTC", xbt:"BTC", ethereum:"ETH", ether:"ETH", solana:"SOL", ripple:"XRP", dogecoin:"DOGE",
   binance:"BNB", binancecoin:"BNB", cardano:"ADA", avalanche:"AVAX", chainlink:"LINK", toncoin:"TON", tron:"TRX",

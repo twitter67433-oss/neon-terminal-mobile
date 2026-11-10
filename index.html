@@ -7,7 +7,7 @@
 <title>NEON//TERMINAL — Kripto</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2305070b'/%3E%3Ctext x='3' y='13' font-size='13' fill='%2339ff14'%3E%3E%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="vendor/fonts.css">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2">
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
@@ -61,7 +61,7 @@
 <main id="dash" class="hidden">
   <div id="hero">
     <div class="hero-sym"><span id="h-sym">---</span><small id="h-name"></small></div>
-    <div class="hero-price"><span id="h-price">--</span><span id="h-chg" class="chg">--</span></div>
+    <div class="hero-price"><span id="h-price">--</span><span id="h-chg" class="chg">--</span><small id="h-upd" style="display:block;opacity:.7;font-size:11px"></small></div>
     <div class="hero-badges" id="h-badges"></div>
   </div>
   <div class="grid">
@@ -83,7 +83,7 @@
     <div class="panel p-budget" data-n="6"><h3><span class="num">06</span> POZİSYON BÜYÜKLÜĞÜ</h3><div id="budget-box"></div></div>
     <div class="panel p-risk" data-n="7"><h3><span class="num">07</span> RİSK KONTROLÜ</h3><div id="risk-box"></div></div>
     <div class="panel p-ticket" data-n="8"><h3><span class="num">08</span> EMİR FİŞİ</h3><div id="ticket-box"></div></div>
-    <div class="panel p-alerts" data-n="9"><h3><span class="num">09</span> FİYAT ALARMLARI <label class="live-toggle"><input type="checkbox" id="live"> canlı 15sn</label></h3><div id="alerts-box"></div></div>
+    <div class="panel p-alerts" data-n="9"><h3><span class="num">09</span> FİYAT ALARMLARI <label class="live-toggle"><input type="checkbox" id="live"> canlı 5sn</label></h3><div id="alerts-box"></div></div>
     <div class="panel p-analyst" data-n="10"><h3><span class="num">10</span> ANALİST · COINGECKO</h3><div id="analyst-box"></div></div>
     <div class="panel p-news" data-n="2"><h3><span class="num">02</span> HABERLER</h3><div id="news-box"></div></div>
     <div class="panel p-congress" data-n="11"><h3><span class="num">11</span> KONGRE İŞLEMLERİ</h3><div id="congress-box"></div></div>
@@ -105,7 +105,7 @@
     <div class="sheet-btns"><button type="button" id="sheet-reset">VARSAYILAN</button><button type="button" id="sheet-cancel">İPTAL</button><button type="submit">KAYDET</button></div>
   </form>
 </div>
-<script src="engine.js"></script>
-<script src="app.js"></script>
+<script src="engine.js?v=2"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

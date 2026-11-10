@@ -145,6 +145,7 @@ function render(d, steps){
   safe(() => D.risk ? renderRisk(D.risk) : ($("#risk-box").innerHTML = panelFail(".p-risk", steps[7])), ".p-risk");
   safe(() => D.ticket ? renderTicket(D.ticket, d) : ($("#ticket-box").innerHTML = panelFail(".p-ticket", steps[8])), ".p-ticket");
   safe(() => D.alerts ? renderAlerts(D.alerts.price, true) : ($("#alerts-box").innerHTML = panelFail(".p-alerts", steps[9])), ".p-alerts");
+  setLive(true);
   safe(() => D.analyst ? renderAnalyst(D.analyst) : ($("#analyst-box").innerHTML = panelFail(".p-analyst", steps[10])), ".p-analyst");
   safe(() => $("#news-box").innerHTML = D.news ? newsHTML(D.news) : panelFail(".p-news", steps[2]), ".p-news");
   safe(() => $("#congress-box").innerHTML = D.pelosi ? congressHTML(D.pelosi) : panelFail(".p-congress", steps[11]), ".p-congress");
@@ -316,13 +317,13 @@ function renderAlerts(price, first){
   $("#alerts-box").innerHTML = `<div class="live-price ${flash}">${fmtP(price)} <small id="live-at">${first ? "24s " + fmtP(a.low) + " – " + fmtP(a.high) : "güncellendi " + new Date().toLocaleTimeString("tr-TR",{timeZone:TZ})}</small></div>
    <div class="alv">${rows.map(([n,c,v]) => { const dd = (v/price-1)*100; const w = Math.min(50, Math.abs(dd)/maxd*50);
      return `<div class="al ${c}"><div class="lab"><span>${n} ${fmtP(v)}</span><span class="${cls(dd)}">${pct(dd)} uzakta</span></div><div class="track"><div class="cen"></div><div class="b" style="${dd>=0?`left:50%;width:${w}%`:`left:${50-w}%;width:${w}%`}"></div></div></div>`; }).join("")}</div>
-   <div class="plan-foot">Kapat saati: ${tLocal(a.flat_by_ts)} ${TZL} · Canlı izlemek için yukarıdaki <b>canlı 15sn</b> kutusunu aç.</div>`;
+   <div class="plan-foot">Kapat saati: ${tLocal(a.flat_by_ts)} ${TZL} · Fiyat her 5 saniyede canlı güncellenir.</div>`;
   lastPrice = price;
 }
-function setLive(on){ $("#live").checked = on; clearInterval(liveTimer); liveTimer = null; if (on) { pollPrice(); liveTimer = setInterval(pollPrice, 15000); } }
+function setLive(on){ $("#live").checked = on; clearInterval(liveTimer); liveTimer = null; if (on) { pollPrice(); liveTimer = setInterval(pollPrice, 5000); } }
 $("#live").addEventListener("change", e => setLive(e.target.checked));
 async function pollPrice(){ if (!CUR) return; try { const d = { price: await ENGINE.price(CUR.symbol) }; if (!d.price) return;
-  renderAlerts(d.price, false); $("#h-price").textContent = fmtP(d.price);
+  renderAlerts(d.price, false); $("#h-price").textContent = fmtP(d.price); const hu=$("#h-upd"); if (hu) hu.textContent = "canlı · " + new Date().toLocaleTimeString("tr-TR",{timeZone:TZ});
   if (cseries && CUR){ const raw = chartTF === "1h" ? CUR.bars1h : CUR.bars5m; const b = raw[raw.length-1]; const off = tzOffset(b[0]);
     b[2] = Math.max(b[2], d.price); b[3] = Math.min(b[3], d.price); b[4] = d.price; cseries.update({ time: b[0]+off, open: b[1], high: b[2], low: b[3], close: b[4] }); } } catch(e){} }
 /* analyst */
@@ -365,3 +366,5 @@ $("#sheet-form").addEventListener("submit", e => { e.preventDefault(); const f =
 
 /* go */
 (async () => { await boot(); mirror(); if (matchMedia("(pointer:fine)").matches) inp.focus(); const q = params.get("coin"); if (q) run(q); else startDemo(); })();
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden && $("#live").checked) pollPrice(); });
