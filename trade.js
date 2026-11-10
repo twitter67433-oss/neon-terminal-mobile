@@ -88,17 +88,20 @@ async function wsCall(method, params){
 }
 /* symbol meta */
 const xinfo = {};
-async function meta(base){
+async function meta(d){ const base = typeof d === "string" ? d : d.base, exact = typeof d === "object" && d.src === "fut" ? d.symbol : null;
   const c = bget(), k = c.testnet ? "t" : "m";
   if (!xinfo[k]) xinfo[k] = pub("/fapi/v1/exchangeInfo").catch(e => { delete xinfo[k]; throw e; });
   const info = await xinfo[k];
-  for (const [pre, mult] of [["", 1], ["1000", 1000], ["1000000", 1e6], ["1M", 1e6]]){
-    const s = info.symbols.find(x => x.symbol === pre + base + "USDT" && x.contractType === "PERPETUAL" && x.status === "TRADING");
+  for (const [pre, mult] of (exact ? [["@", 1]] : []).concat([["", 1], ["1000", 1000], ["1000000", 1e6], ["1M", 1e6]])){
+    const want = pre === "@" ? exact : pre + base + "USDT";
+    const s = info.symbols.find(x => x.symbol === want && x.contractType === "PERPETUAL" && x.status === "TRADING");
     if (s){ const f = t => s.filters.find(x => x.filterType === t) || {}; const lot = f("MARKET_LOT_SIZE").stepSize ? f("MARKET_LOT_SIZE") : f("LOT_SIZE");
       const dec = v => { v = String(v); return v.includes(".") ? v.replace(/0+$/, "").split(".")[1].length : 0; };
       return { symbol: s.symbol, mult, step: +lot.stepSize, qdec: dec(lot.stepSize), minQty: +lot.minQty, maxQty: +lot.maxQty, tick: +f("PRICE_FILTER").tickSize, pdec: dec(f("PRICE_FILTER").tickSize), minNotional: +(f("MIN_NOTIONAL").notional || 5) }; } }
   return null;
 }
+/* unit multiplier between analysed prices and the order contract: 1 when the analysis already uses futures data */
+const UM = () => (D && D.src === "fut") ? 1 : (M ? M.mult : 1);
 const floorStep = (x, step, d) => (Math.floor(x/step + 1e-9)*step).toFixed(d), roundTick = (x, tick, d) => (Math.round(x/tick)*tick).toFixed(d);
 let acct = null, dual = null, M = null;
 async function refreshAccount(){
@@ -127,7 +130,7 @@ function levelsFor(side){ const S = D && D.data.signal; if (!S) return null; ret
 async function calc(){
   const out = $("#bfx-calc"); if (!out || !D) return null; const c = bget(), cfg = ENGINE.config();
   const side = $("#bfx-form").dataset.side, L = side === "long", lev = +$("#bfx-lev").value || 1;
-  const px = (livePx || D.price) * (M ? M.mult : 1); const st = +$("#bfx-stop").value, tg = +$("#bfx-tgt").value;
+  const px = (livePx || D.price) * UM(); const st = +$("#bfx-stop").value, tg = +$("#bfx-tgt").value;
   if (!M){ out.innerHTML = `<div class="err-line">✖ ${esc(D.base)} için Binance USDⓈ-M vadeli sözleşme bulunamadı (${c.testnet ? "testnet" : "gerçek"}).</div>`; return null; }
   const rpu = Math.abs(px - st), riskQty = rpu > 0 ? cfg.max_loss_per_trade/rpu : 0;
   let capN = cfg.account_size*cfg.position_cap_pct/100*lev, capBy = `pozisyon tavanı %${cfg.position_cap_pct} × ${lev}x`;
@@ -141,7 +144,7 @@ async function calc(){
   if (notional < M.minNotional) issues.push(`tutar $${notional.toFixed(2)} < Binance minimumu $${M.minNotional} (max zararı ya da kaldıracı artır)`);
   if (qty > M.maxQty) issues.push("miktar üst sınırı aşıyor");
   if (acct && margin > acct.avail) issues.push("teminat yetersiz");
-  out.innerHTML = `<div class="kv"><span class="k">Sözleşme</span><span class="v">${esc(M.symbol)}${M.mult > 1 ? ` (×${M.mult})` : ""}</span>
+  out.innerHTML = `<div class="kv"><span class="k">Sözleşme</span><span class="v">${esc(M.symbol)}${UM() > 1 ? ` (spot fiyatı ×${M.mult})` : ""} · ${D.src === "fut" ? "PERP" : "SPOT verisi"}</span>
     <span class="k">Fiyat (canlı)</span><span class="v">${fp(px)}</span><span class="k">Miktar</span><span class="v">${qty.toFixed(M.qdec)} <small>(${esc(by)})</small></span>
     <span class="k">Tutar / teminat</span><span class="v">$${notional.toFixed(2)} / $${margin.toFixed(2)}</span><span class="k">Stopta zarar ≈</span><span class="v dn">$${loss.toFixed(2)}</span>
     <span class="k">Hedefte kâr ≈</span><span class="v up">$${(qty*Math.abs(tg - px)).toFixed(2)}</span></div>${issues.map(i => `<div class="err-line">✖ ${esc(i)}</div>`).join("")}`;
@@ -149,14 +152,18 @@ async function calc(){
 }
 async function placeOrder(){
   const c = bget(); if (!c.key || !c.secret){ log("#bfx-log", "✖ Önce API anahtarlarını kaydet.", "dn"); return; }
-  try { await syncTime(c.testnet); M = await meta(D.base); } catch(e){ log("#bfx-log", "✖ " + esc(trErr(e)), "dn"); return; }
+  try { await syncTime(c.testnet); M = await meta(D); } catch(e){ log("#bfx-log", "✖ " + esc(trErr(e)), "dn"); return; }
   const k = await calc(); if (!k) return; if (!k.ok){ log("#bfx-log", "✖ Emir hazırlanamadı: " + esc(k.issues.join("; ")), "dn"); return; }
   const attach = $("#bfx-attach").checked, mode = c.testnet ? "TESTNET" : "GERÇEK";
+  let tMark = null; if (c.testnet) try { tMark = +(await pub("/fapi/v1/premiumIndex?symbol=" + M.symbol)).markPrice; } catch(e){}
   const rows = [["Mod", mode, c.testnet ? "" : "dn"], ["Sembol", M.symbol], ["Yön", k.L ? "LONG (BUY)" : "SHORT (SELL)", k.L ? "up" : "dn"], ["Tür", "MARKET (piyasa)"],
     ["Miktar", k.qty.toFixed(M.qdec)], ["Tutar ≈", "$" + k.notional.toFixed(2)], ["Kaldıraç", k.lev + "x", k.lev > 3 ? "dn" : ""], ["Teminat ≈", "$" + k.margin.toFixed(2)],
     ["Stop", attach ? roundTick(k.st, M.tick, M.pdec) + " (STOP_MARKET, tümünü kapat)" : "YOK", attach ? "dn" : "dn"], ["Hedef", attach ? roundTick(k.tg, M.tick, M.pdec) + " (TAKE_PROFIT_MARKET)" : "YOK", "up"],
-    ["Stopta zarar ≈", "$" + k.loss.toFixed(2), "dn"]];
+    ["Stopta zarar ≈", "$" + k.loss.toFixed(2), "dn"], ["Analiz fiyatı", fp(k.px) + (D.src === "fut" ? " (mainnet PERP)" : " (SPOT)")]];
+  if (tMark) rows.push(["Testnet mark fiyatı", fp(tMark), Math.abs(tMark/k.px - 1) > 0.01 ? "dn" : ""]);
   const warn = (k.lev > 3 ? "⚠ Yüksek kaldıraç: küçük bir hareket teminatını eritebilir, likidasyon riski var.<br>" : "") + (attach ? "" : "⚠ Stop eklenmedi: zarar sınırsız büyüyebilir.<br>") +
+    (c.testnet ? `ℹ Testnet fiyatı gerçek piyasadan farklı olabilir${tMark && Math.abs(tMark/k.px - 1) > 0.01 ? ` (şu an %${((tMark/k.px - 1)*100).toFixed(1)} fark — stop/hedef testnette hemen tetiklenebilir ya da reddedilebilir)` : ""}. Analiz gerçek (mainnet) vadeli verisini kullanır.<br>` : "") +
+    (D.src !== "fut" ? "⚠ Analiz SPOT verisiyle yapıldı (Futures erişilemedi); vadeli fiyat farklı olabilir.<br>" : "") +
     "Sinyal garanti değildir. Piyasa emri anlık fiyattan dolar; kayma olabilir.";
   if (!(await confirmSheet({ title: "EMRİ ONAYLA", rows, mode, warn, okText: "ONAYLA · " + (k.L ? "LONG" : "SHORT") }))){ log("#bfx-log", "Emir iptal edildi (onaylanmadı)."); return; }
   const side = k.L ? "BUY" : "SELL", ex = k.L ? "SELL" : "BUY", ps = dual ? { positionSide: k.L ? "LONG" : "SHORT" } : {};
@@ -241,7 +248,7 @@ function bfxHTML(){
 function bindBfx(){
   const f = $("#bfx-form"), recalc = () => calc().catch(() => {});
   f.querySelectorAll(".side-btns button").forEach(b => b.onclick = () => { f.dataset.side = b.dataset.side; f.querySelectorAll(".side-btns button").forEach(x => x.classList.toggle("on", x === b));
-    const lv = levelsFor(b.dataset.side) || {}; $("#bfx-stop").value = lv.stop ?? ""; $("#bfx-tgt").value = lv.target ?? ""; if (M && M.mult > 1){ $("#bfx-stop").value = (lv.stop*M.mult).toPrecision(6); $("#bfx-tgt").value = (lv.target*M.mult).toPrecision(6); } recalc(); });
+    const lv = levelsFor(b.dataset.side) || {}; $("#bfx-stop").value = lv.stop ?? ""; $("#bfx-tgt").value = lv.target ?? ""; if (UM() > 1){ $("#bfx-stop").value = (lv.stop*UM()).toPrecision(6); $("#bfx-tgt").value = (lv.target*UM()).toPrecision(6); } recalc(); });
   $("#bfx-lev").onchange = e => { const v = +e.target.value; bset({ lev: v }); const w = $("#bfx-levwarn"); w.classList.toggle("hidden", v <= 3); w.innerHTML = `⚠ ${v}x kaldıraç: fiyat %${(100/v).toFixed(0)} ters giderse teminatın tamamı gider (likidasyon). 1x önerilir.`; recalc(); };
   for (const id of ["#bfx-qty", "#bfx-stop", "#bfx-tgt"]) $(id).oninput = recalc;
   $("#bfx-attach").onchange = e => bset({ attach: e.target.checked });
@@ -255,7 +262,7 @@ function bindBfx(){
   $("#bfx-del").onclick = () => { localStorage.removeItem(BK); acct = null; dual = null; tFor = null; if (wsc) try { wsc.ws.close(); } catch(e){} render(); log("#bfx-log", "Anahtarlar silindi.", "up"); };
   $("#bfx-test").onchange = e => { if (!e.target.checked) log("#bfx-log", "⚠ Testnet kapatıldı: KAYDET'e basarsan GERÇEK hesap kullanılır.", "dn"); };
   renderAcct();
-  meta(D.base).then(m => { M = m; if (m && m.mult > 1){ const lv = levelsFor(f.dataset.side) || {}; $("#bfx-stop").value = (lv.stop*m.mult).toPrecision(6); $("#bfx-tgt").value = (lv.target*m.mult).toPrecision(6); } recalc(); })
+  meta(D).then(m => { M = m; if (m && UM() > 1){ const lv = levelsFor(f.dataset.side) || {}; $("#bfx-stop").value = (lv.stop*UM()).toPrecision(6); $("#bfx-tgt").value = (lv.target*UM()).toPrecision(6); } recalc(); })
     .catch(e => { M = null; $("#bfx-calc").innerHTML = `<div class="err-line">✖ Vadeli sembol bilgisi alınamadı: ${esc(trErr(e))}</div>`; });
   if (bget().key && !acct) refreshAccount();
 }
@@ -326,7 +333,7 @@ async function getQuote(){
 }
 let w3p = null;
 function web3(){ if (window.solanaWeb3) return Promise.resolve(window.solanaWeb3);
-  return w3p = w3p || new Promise((ok, no) => { const s = document.createElement("script"); s.src = "vendor/solana-web3.iife.min.js?v=3"; s.onload = () => ok(window.solanaWeb3); s.onerror = () => { w3p = null; no(new Error("solana web3 yüklenemedi")); }; document.head.appendChild(s); }); }
+  return w3p = w3p || new Promise((ok, no) => { const s = document.createElement("script"); s.src = "vendor/solana-web3.iife.min.js?v=4"; s.onload = () => ok(window.solanaWeb3); s.onerror = () => { w3p = null; no(new Error("solana web3 yüklenemedi")); }; document.head.appendChild(s); }); }
 async function doSwap(){
   const p = prov(); if (!p || !ph.pk){ log("#ph-log", "✖ Önce Phantom'u bağla.", "dn"); return; }
   let Q = ph.quote; if (!Q || Date.now() - ph.qAt > 25000){ Q = await getQuote(); if (!Q) return; log("#ph-log", "Teklif yenilendi (eskiydi). Kontrol et."); }

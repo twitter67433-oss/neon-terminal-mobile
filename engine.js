@@ -23,6 +23,18 @@ async function bx(path){
   }
   throw new Error("Binance erişilemedi (" + (last && last.message) + ")");
 }
+/* USDⓈ-M Futures (perpetual) — the same contract orders go to. Only fapi.binance.com serves it
+   (fapi1-4 just redirect), so if it is unreachable we fall back to spot with a visible warning. */
+const FAPI = "https://fapi.binance.com";
+async function fx(path){
+  let r; try { r = await fetch(FAPI + path, {cache:"no-store"}); } catch(e){ const x = new Error("Binance Futures erişilemedi (" + e.message + ")"); x.net = true; throw x; }
+  if (r.status === 400){ const j = await r.json().catch(() => ({})); const e = new Error(j.msg || "bad request"); e.code = 400; throw e; }
+  if (!r.ok){ const e = new Error("Binance Futures HTTP " + r.status + (r.status === 451 ? " (bölge kısıtı)" : "")); e.net = true; e.http = r.status; throw e; }
+  return r.json();
+}
+const API = {
+  fut: { get: p => fx(p), klines: "/fapi/v1/klines", t24: "/fapi/v1/ticker/24hr", price: "/fapi/v1/ticker/price" },
+  spot: { get: p => bx(p), klines: "/api/v3/klines", t24: "/api/v3/ticker/24hr", price: "/api/v3/ticker/price" } };
 async function getJSON(url){ const r = await fetch(url, {cache:"no-store"}); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }
 
 const ALIASES = { bitcoin:"BTC", xbt:"BTC", ethereum:"ETH", ether:"ETH", solana:"SOL", ripple:"XRP", dogecoin:"DOGE",
@@ -45,29 +57,62 @@ function normalize(q){
   s = s.replace(/[^A-Z0-9]/g, "");
   return ALIASES[s.toLowerCase()] || s;
 }
+const pdecOf = v => { v = String(v); return v.includes(".") ? v.replace(/0+$/, "").split(".")[1].length : 0; };
+async function futSymbols(){
+  try { const c = sessionStorage.getItem("neon.fut"); if (c){ const o = JSON.parse(c); if (Date.now() - o.t < 3600e3) return o.s; } } catch(e){}
+  const info = await fx("/fapi/v1/exchangeInfo");
+  const list = info.symbols.filter(x => x.contractType === "PERPETUAL" && x.status === "TRADING" && x.quoteAsset === "USDT").map(x => {
+    const f = t => x.filters.find(y => y.filterType === t) || {}; const lot = f("MARKET_LOT_SIZE").stepSize ? f("MARKET_LOT_SIZE") : f("LOT_SIZE");
+    return { s: x.symbol, b: x.baseAsset, tick: f("PRICE_FILTER").tickSize, step: lot.stepSize }; });
+  try { sessionStorage.setItem("neon.fut", JSON.stringify({ t: Date.now(), s: list })); } catch(e){}
+  return list;
+}
+const MULTS = [["", 1], ["1000", 1000], ["1000000", 1e6], ["1M", 1e6]];
+function futFind(list, base){
+  for (const [pre, mult] of MULTS){ const x = list.find(y => y.s === pre + base + "USDT"); if (x) return { x, mult }; }
+  const m = /^(1000000|1000|1M)(.+)$/.exec(base); if (m){ const x = list.find(y => y.s === base + "USDT"); if (x) return { x, mult: m[1] === "1000" ? 1000 : 1e6 }; }
+  return null;
+}
+function futInfo(f){ const m = /^(1000000|1000|1M)(?=[A-Z])/.exec(f.x.b), mult = m ? (m[1] === "1000" ? 1000 : 1e6) : 1;
+  return { sym: f.x.s, base: m ? f.x.b.slice(m[1].length) : f.x.b, asset: f.x.b, mult,
+  tick: +f.x.tick, pdec: pdecOf(f.x.tick), step: +f.x.step, qdec: pdecOf(f.x.step), src: "fut" }; }
 async function resolve(q){
   const base = normalize(q);
-  if (!base || base.length < 2) throw new Error("Coin adı boş ya da geçersiz: '" + q + "'");
+  if (!base) throw new Error("Coin adı boş ya da geçersiz: '" + q + "'");
+  let list = null, futErr = null;
+  try { list = await futSymbols(); } catch(e){ futErr = e; }
+  if (list){
+    let f = futFind(list, base);
+    if (!f){ try { const d = await getJSON("https://api.coingecko.com/api/v3/search?query=" + encodeURIComponent(q));
+        const c = (d.coins || []).sort((a, b) => (a.market_cap_rank || 1e9) - (b.market_cap_rank || 1e9))[0];
+        if (c && c.symbol) f = futFind(list, c.symbol.toUpperCase()); } catch(e){} }
+    if (f) return futInfo(f);
+  }
+  // spot fallback (clearly flagged in the UI): futures unreachable, or this coin has no USDT perpetual
+  const sp = await resolveSpot(q, base);
+  sp.src = "spot"; sp.spot_reason = futErr ? "Futures erişilemedi: " + futErr.message : "Bu coinin Binance USDⓈ-M perpetual sözleşmesi yok";
+  return sp;
+}
+async function resolveSpot(q, base){
   let all = null;
   try { const cached = sessionStorage.getItem("neon.usdt"); if (cached){ const o = JSON.parse(cached); if (Date.now() - o.t < 3600e3) all = new Set(o.s); } } catch(e){}
   if (!all){ const d = await bx("/api/v3/ticker/price"); all = new Set(d.map(x => x.symbol).filter(x => x.endsWith("USDT")));
     try { sessionStorage.setItem("neon.usdt", JSON.stringify({ t: Date.now(), s: [...all] })); } catch(e){} }
   const tryBase = async b => { if (!all.has(b + "USDT")) return null; try { const info = await bx("/api/v3/exchangeInfo?symbol=" + b + "USDT");
-      const s = info.symbols && info.symbols[0]; if (s && s.status === "TRADING") return { sym: s.symbol, base: s.baseAsset }; } catch(e){ if (e.code !== 400) throw e; } return null; };
+      const s = info.symbols && info.symbols[0]; if (s && s.status === "TRADING"){ const pf = (s.filters.find(f => f.filterType === "PRICE_FILTER") || {}).tickSize || "0.00000001", lf = (s.filters.find(f => f.filterType === "LOT_SIZE") || {}).stepSize || "0.000001";
+        return { sym: s.symbol, base: s.baseAsset, asset: s.baseAsset, mult: 1, tick: +pf, pdec: pdecOf(pf), step: +lf, qdec: pdecOf(lf) }; } } catch(e){ if (e.code !== 400) throw e; } return null; };
   let r = await tryBase(base);
-  if (!r){ // CoinGecko name search fallback (e.g. "render" -> RENDER)
-    try { const d = await getJSON("https://api.coingecko.com/api/v3/search?query=" + encodeURIComponent(q));
+  if (!r){ try { const d = await getJSON("https://api.coingecko.com/api/v3/search?query=" + encodeURIComponent(q));
       const c = (d.coins || []).sort((a, b) => (a.market_cap_rank || 1e9) - (b.market_cap_rank || 1e9))[0];
-      if (c && c.symbol && c.symbol.toUpperCase() !== base) r = await tryBase(c.symbol.toUpperCase());
-    } catch(e){}
-  }
-  if (!r) throw new Error("Coin bulunamadı ya da Binance'te USDT paritesi yok: '" + q + "' (" + base + "USDT)");
+      if (c && c.symbol && c.symbol.toUpperCase() !== base) r = await tryBase(c.symbol.toUpperCase()); } catch(e){} }
+  if (!r) throw new Error("Coin bulunamadı: '" + q + "' — Binance Futures'ta " + base + "USDT perpetual (veya 1000" + base + "USDT) yok, spotta da yok.");
   return r;
 }
+let SRC = "fut", TICK = null, PDEC = null;
 async function klines(sym, interval, startMs, endMs, limit = 1000){
-  let p = `/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`;
+  let p = `${API[SRC].klines}?symbol=${sym}&interval=${interval}&limit=${limit}`;
   if (startMs) p += "&startTime=" + startMs; if (endMs) p += "&endTime=" + endMs;
-  const d = await bx(p);
+  const d = await API[SRC].get(p);
   return d.map(k => ({ t: Math.floor(k[0]/1000), o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5], ct: Math.floor(k[6]/1000) }));
 }
 async function bars5m(sym, days, onProg){
@@ -90,6 +135,9 @@ const decFor = p => p >= 1000 ? 2 : p >= 1 ? 4 : p >= 0.01 ? 6 : 10;
 const floorTo = (x, d) => Math.floor(x * 10**d) / 10**d;
 const roundTo = (x, d) => Math.round(x * 10**d) / 10**d;
 const ceilTo = (x, d) => Math.ceil(x * 10**d) / 10**d;
+/* tick-size rounding (futures PRICE_FILTER) when known, else magnitude decimals */
+const tk = (x, mode) => { if (!TICK) { const d = decFor(x); return mode === "f" ? floorTo(x, d) : mode === "c" ? ceilTo(x, d) : roundTo(x, d); }
+  const n = x/TICK, k = mode === "f" ? Math.floor(n + 1e-9) : mode === "c" ? Math.ceil(n - 1e-9) : Math.round(n); return +(k*TICK).toFixed(PDEC); };
 function ema(a, n){ const k = 2/(n + 1); let e = a[0]; for (let i = 1; i < a.length; i++) e = a[i]*k + e*(1 - k); return e; }
 function findSetups(c){
   const last = c[c.length-1], hi20 = Math.max(...c.slice(-21, -1)), ma20 = c.slice(-20).reduce((a, b) => a + b, 0)/20,
@@ -133,12 +181,12 @@ async function stepNews(ctx, cfg){
   return items.length ? `${items.length} başlık · kaynak: ${source}` : "haber kaynağı yok / sonuç yok";
 }
 function planFor(side, e, orr, cfg){
-  const mid = (orr.high + orr.low)/2, L = side === "long", dist = (L ? e - mid : mid - e)/e*100, dec = decFor(e);
+  const mid = (orr.high + orr.low)/2, L = side === "long", dist = (L ? e - mid : mid - e)/e*100;
   let stop, label, note = "";
-  if (cfg.stop_rule === "or-mid" && dist >= cfg.min_stop_pct && dist <= cfg.max_stop_pct){ stop = L ? floorTo(mid, dec) : ceilTo(mid, dec); label = "açılış aralığı ortası"; }
-  else { stop = L ? floorTo(e*(1 - cfg.fallback_stop_pct/100), dec) : ceilTo(e*(1 + cfg.fallback_stop_pct/100), dec); label = `%${cfg.fallback_stop_pct} giriş ${L ? "altı" : "üstü"}`;
+  if (cfg.stop_rule === "or-mid" && dist >= cfg.min_stop_pct && dist <= cfg.max_stop_pct){ stop = tk(mid, L ? "f" : "c"); label = "açılış aralığı ortası"; }
+  else { stop = tk(e*(1 + (L ? -1 : 1)*cfg.fallback_stop_pct/100), L ? "f" : "c"); label = `%${cfg.fallback_stop_pct} giriş ${L ? "altı" : "üstü"}`;
     note = dist < cfg.min_stop_pct ? ` (aralık ortası çok yakın/yanlış tarafta <%${cfg.min_stop_pct})` : ` (aralık ortası çok uzak >%${cfg.max_stop_pct})`; }
-  const R = Math.abs(e - stop), target = roundTo(L ? e + cfg.target_r*R : Math.max(e - cfg.target_r*R, e*0.01), dec);
+  const R = Math.abs(e - stop), target = tk(L ? e + cfg.target_r*R : Math.max(e - cfg.target_r*R, e*0.01), "r");
   return { side, entry: e, stop, target, risk_per_share: R, reward_risk: cfg.target_r, stop_label: label, note };
 }
 function stepEntry(ctx, cfg){
@@ -170,7 +218,7 @@ function stepExit(ctx, cfg){
 }
 function tmRun(ctx, cfg, plan, entry_time, onProg){
   return new Promise((res, rej) => {
-    const w = new Worker("tm-worker.js?v=3"); const B = ctx.bars;
+    const w = new Worker("tm-worker.js?v=4"); const B = ctx.bars;
     const t = new Float64Array(B.length), h = new Float64Array(B.length), l = new Float64Array(B.length), c = new Float64Array(B.length);
     B.forEach((b, i) => { t[i] = b.t; h[i] = b.h; l[i] = b.l; c[i] = b.c; });
     w.onmessage = ev => { const m = ev.data; if (m.type === "progress") { onProg && onProg(m.k); return; }
@@ -230,19 +278,19 @@ function signal(ctx, cfg){
     tm: { long: tl ? tl.target : null, short: ts ? ts.target : null }, price, t: now, note: "sinyal, garanti değil" };
 }
 function stepBudget(ctx, cfg){
-  const p = ctx.plan, e = p.entry, rpu = e - p.stop, dec = cfg.qty_decimals;
+  const p = ctx.plan, e = p.entry, rpu = e - p.stop, dec = ctx.qdec ?? cfg.qty_decimals;
   const lim = [["işlem başı max zarar", cfg.max_loss_per_trade/rpu], [`pozisyon tavanı %${cfg.position_cap_pct}`, cfg.account_size*cfg.position_cap_pct/100/e],
     ["nakit (tampon sonrası)", (cfg.account_size - cfg.cash_buffer)/e]];
   let w = lim[0]; for (const x of lim) if (x[1] < w[1]) w = x;
-  let qty = floorTo(w[1], dec); if (qty*e < cfg.min_order_usd) qty = 0;
+  let qty = ctx.step ? +(Math.floor(w[1]/ctx.step + 1e-9)*ctx.step).toFixed(dec) : floorTo(w[1], dec); if (qty*e < cfg.min_order_usd) qty = 0;
   ctx.qty = qty;
   ctx.out.budget = { account: cfg.account_size, max_loss: cfg.max_loss_per_trade, rpu, limits: lim.map(([name, q]) => ({ name, qty: q, usd: q*e })),
-    which: w[0], qty, notional: qty*e, loss: qty*rpu, base: ctx.base, cap_pct: cfg.position_cap_pct };
-  return `Miktar ${qty} ${ctx.base} ≈ $${(qty*e).toFixed(2)} (belirleyen: ${w[0]})`;
+    which: w[0], qty, notional: qty*e, loss: qty*rpu, base: ctx.asset || ctx.base, cap_pct: cfg.position_cap_pct };
+  return `Miktar ${qty} ${ctx.asset || ctx.base} ≈ $${(qty*e).toFixed(2)} (belirleyen: ${w[0]})`;
 }
 async function stepRisk(ctx, cfg){
   const p = ctx.plan, qty = ctx.qty || 0, e = p.entry, s = p.stop, tg = p.target;
-  let fresh = ctx.price; try { fresh = +(await bx("/api/v3/ticker/price?symbol=" + ctx.sym)).price || fresh; } catch(err){}
+  let fresh = ctx.price; try { fresh = +(await API[SRC].get(API[SRC].price + "?symbol=" + ctx.sym)).price || fresh; } catch(err){}
   const worst = Math.max(e, fresh), loss = (worst - s)*qty, rr = worst > s ? (tg - worst)/(worst - s) : -1, cap = cfg.account_size*cfg.position_cap_pct/100;
   const f = x => "$" + (x >= 1 ? x.toFixed(2) : x.toPrecision(4));
   const checks = [["Stop var ve girişin altında", 0 < s && s < e], ["Hedef girişin üstünde", tg > e],
@@ -257,8 +305,8 @@ async function stepRisk(ctx, cfg){
   return ctx.out.risk.verdict + ` · ${checks.filter(c => c[1]).length}/${checks.length} kontrol`;
 }
 function stepTicket(ctx, cfg){
-  const p = ctx.plan, dec = decFor(p.entry), waiting = ctx.entry_status === "waiting";
-  const order = { symbol: ctx.base + "/USDT", qty: (ctx.qty || 0).toFixed(cfg.qty_decimals), side: "buy", type: waiting ? "stop_limit" : "limit",
+  const p = ctx.plan, dec = PDEC ?? decFor(p.entry), waiting = ctx.entry_status === "waiting";
+  const order = { symbol: ctx.sym + (ctx.src === "fut" ? " (PERP)" : " (SPOT)"), qty: (ctx.qty || 0).toFixed(ctx.qdec ?? cfg.qty_decimals), side: "buy", type: waiting ? "stop_limit" : "limit",
     time_in_force: "gtc", limit_price: String(roundTo(p.entry*1.001, dec)) };
   if (waiting) order.stop_price = String(roundTo(p.entry, dec));
   ctx.out.ticket = { order, status: "PAPER / NOT PLACED", entry: p.entry, stop: p.stop, target: p.target, flat_by_ts: p.flat_by_ts, risk: ctx.out.risk ? ctx.out.risk.verdict : "-" };
@@ -294,10 +342,12 @@ async function run(q, onEvent){
   const cfg = config();
   let r;
   try { r = await resolve(q); } catch(e){ onEvent({ type: "error", error: e.message }); return; }
-  const t24 = await bx("/api/v3/ticker/24hr?symbol=" + r.sym);
-  const ctx = { sym: r.sym, base: r.base, price: +t24.lastPrice, chg24: +t24.priceChangePercent,
+  SRC = r.src; TICK = r.tick || null; PDEC = r.tick ? r.pdec : null;
+  let t24; try { t24 = await API[SRC].get(API[SRC].t24 + "?symbol=" + r.sym); } catch(e){ onEvent({ type: "error", error: e.message }); return; }
+  let prem = null; if (SRC === "fut") try { prem = await fx("/fapi/v1/premiumIndex?symbol=" + r.sym); } catch(e){}
+  const ctx = { sym: r.sym, base: r.base, asset: r.asset, mult: r.mult, src: r.src, spot_reason: r.spot_reason, tick: r.tick, pdec: r.pdec, step: r.step, qdec: r.qdec, price: +t24.lastPrice, chg24: +t24.priceChangePercent,
     t24: { low: +t24.lowPrice, high: +t24.highPrice, open: +t24.openPrice }, out: {}, name: (GECKO[r.base] || "").replace(/-/g, " ") };
-  onEvent({ type: "start", symbol: r.sym, base: r.base, price: ctx.price });
+  onEvent({ type: "start", symbol: r.sym, base: r.base, price: ctx.price, src: r.src });
   try { ctx.bars = await bars5m(r.sym, cfg.history_days, (d, n) => onEvent({ type: "load", done: d, total: n })); }
   catch(e){ onEvent({ type: "error", error: "5dk mum verisi indirilemedi: " + e.message }); return; }
   if (ctx.bars.length < 300){ onEvent({ type: "error", error: `${r.sym} için yeterli 5dk mum yok (${ctx.bars.length})` }); return; }
@@ -314,24 +364,31 @@ async function run(q, onEvent){
   for (const b of ctx.bars){ const k = Math.floor(b.t/3600)*3600, x = h1.get(k);
     if (!x) h1.set(k, { t: k, o: b.o, h: b.h, l: b.l, c: b.c }); else { x.h = Math.max(x.h, b.h); x.l = Math.min(x.l, b.l); x.c = b.c; } }
   const O = ctx.out, fp = x => x === undefined || x === null ? "—" : (x >= 1000 ? "$" + x.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "$" + (+x).toPrecision(5));
-  const summary = [["Fiyat", fp(ctx.price)], ["Tarama", O.scan ? `${O.scan.setup} (RSI ${(O.scan.rsi||0).toFixed(1)})` : "—"],
+  const summary = [["Fiyat", fp(ctx.price) + (ctx.src === "fut" ? " (PERP son fiyat)" : " (SPOT)")], ["Tarama", O.scan ? `${O.scan.setup} (RSI ${(O.scan.rsi||0).toFixed(1)})` : "—"],
     ["Haber", O.news ? `${O.news.count} başlık` : "—"], ["Giriş", O.entry ? O.entry.label : "—"],
     ["Plan", O.plan ? `${fp(O.plan.entry)} / stop ${fp(O.plan.stop)} / hedef ${fp(O.plan.target)}` : "—"],
     ["Simülasyon", O.tm ? `hedef %${O.tm.target.toFixed(0)} / stop %${O.tm.stop.toFixed(0)} / ort. ${O.tm.avg_r >= 0 ? "+" : ""}${O.tm.avg_r.toFixed(2)}R` : "—"],
     ["Büyüklük", O.budget ? `${O.budget.qty} ${ctx.base} ≈ $${O.budget.notional.toFixed(2)} (risk $${O.budget.loss.toFixed(2)})` : "—"],
     ["Risk", O.risk ? O.risk.verdict : "—"], ["Analist", O.analyst ? `#${O.analyst.market_cap_rank}, ATH ${(O.analyst.ath_change_percentage||0).toFixed(0)}%` : "—"],
     ["Kongre", "yalnızca masaüstü"], ["Sinyal", O.signal ? `${O.signal.dir} · güven %${O.signal.conf} (garanti değil)` : "—"]];
-  onEvent({ type: "done", symbol: r.sym, base: r.base, price: ctx.price, chg24: ctx.chg24, data: O, summary,
+  onEvent({ type: "done", symbol: r.sym, base: r.base, asset: r.asset, mult: r.mult, src: r.src, spot_reason: r.spot_reason || null, tick: r.tick, pdec: r.pdec,
+    premium: prem ? { mark: +prem.markPrice, index: +prem.indexPrice, funding: +prem.lastFundingRate, next: +prem.nextFundingTime } : null,
+    price: ctx.price, chg24: ctx.chg24, data: O, summary,
     disclaimer: "Bu bir analizdir, yatırım tavsiyesi değildir. Sinyal garanti değildir. Analiz hiçbir emir göndermez; emir yalnızca İŞLEM bölümünde senin ONAYLA dokunuşunla gider.",
     bars5m: ctx.bars.filter(b => b.t >= now - 36*3600).map(b => [b.t, b.o, b.h, b.l, b.c]),
     bars1h: [...h1.values()].slice(-24*14).map(x => [x.t, x.o, x.h, x.l, x.c]) });
 }
 async function tape(bases){
+  let list = null; try { list = await futSymbols(); } catch(e){}
+  if (list){ const syms = bases.map(b => { const f = futFind(list, b); return f ? f.x.s : null; }).filter(Boolean);
+    const rs = await Promise.all(syms.map(s => fx("/fapi/v1/ticker/24hr?symbol=" + s).then(d => ({ base: s.replace(/USDT$/, ""), price: +d.lastPrice, chg: +d.priceChangePercent, src: "fut" })).catch(() => null)));
+    const ok = rs.filter(Boolean); if (ok.length) return ok; }
   const syms = bases.map(b => b + "USDT"); const d = await bx("/api/v3/ticker/24hr?symbols=" + encodeURIComponent(JSON.stringify(syms)));
   const m = new Map(d.map(x => [x.symbol, x]));
-  return syms.filter(s => m.has(s)).map(s => ({ base: s.replace(/USDT$/, ""), price: +m.get(s).lastPrice, chg: +m.get(s).priceChangePercent }));
+  return syms.filter(s => m.has(s)).map(s => ({ base: s.replace(/USDT$/, ""), price: +m.get(s).lastPrice, chg: +m.get(s).priceChangePercent, src: "spot" }));
 }
-async function price(sym){ return +(await bx("/api/v3/ticker/price?symbol=" + sym)).price; }
-async function ticker(sym){ const d = await bx("/api/v3/ticker/24hr?symbol=" + sym); return { price: +d.lastPrice, chg: +d.priceChangePercent, high: +d.highPrice, low: +d.lowPrice }; }
-return { run, tape, price, ticker, config, saveConfig, DEFAULTS, normalize, decFor };
+async function price(sym, src = "fut"){ return +(await API[src].get(API[src].price + "?symbol=" + sym)).price; }
+async function ticker(sym, src = "fut"){ const d = await API[src].get(API[src].t24 + "?symbol=" + sym); return { price: +d.lastPrice, chg: +d.priceChangePercent, high: +d.highPrice, low: +d.lowPrice }; }
+async function premium(sym){ const p = await fx("/fapi/v1/premiumIndex?symbol=" + sym); return { mark: +p.markPrice, index: +p.indexPrice, funding: +p.lastFundingRate, next: +p.nextFundingTime }; }
+return { run, tape, price, ticker, premium, config, saveConfig, DEFAULTS, normalize, decFor };
 })();

@@ -7,7 +7,7 @@
 <title>NEON//TERMINAL — Kripto</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2305070b'/%3E%3Ctext x='3' y='13' font-size='13' fill='%2339ff14'%3E%3E%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="vendor/fonts.css">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
@@ -41,7 +41,7 @@
   </div>
   <button type="submit">ÇALIŞTIR ⏎</button>
 </form>
-<div class="hint">Örnek: <b>btc</b> · <b>solana</b> · <b>init</b> · <b>INITUSDT</b> · <b>ETH-USD</b> — Enter'a bas. Binance USDT paritesi, canlı WebSocket fiyatı. Analiz emir göndermez; emir yalnızca İŞLEM bölümünde senin ONAYLA dokunuşunla gider.</div>
+<div class="hint">Örnek: <b>btc</b> · <b>solana</b> · <b>init</b> · <b>INITUSDT</b> · <b>ETH-USD</b> — Enter'a bas. Binance USDⓈ-M vadeli (PERP) verisi — emirlerin gittiği sözleşmenin aynısı, canlı WebSocket. Analiz emir göndermez; emir yalnızca İŞLEM bölümünde senin ONAYLA dokunuşunla gider.</div>
 
 <section id="progress" class="hidden">
   <div class="progress-head"><span id="prog-title">TARANIYOR</span><span id="prog-count">0/11</span></div>
@@ -60,8 +60,8 @@
 
 <main id="dash" class="hidden">
   <div id="hero">
-    <div class="hero-sym"><span id="h-sym">---</span><small id="h-name"></small></div>
-    <div class="hero-price"><span id="h-price">--</span><span id="h-chg" class="chg">--</span><small class="hupd"><span id="live-ind" class="live-ind off">○ KAPALI</span> <span id="h-upd"></span></small></div>
+    <div class="hero-sym"><span id="h-sym">---</span><small id="h-name"></small><div id="h-src"></div></div>
+    <div class="hero-price"><span id="h-price">--</span><span id="h-chg" class="chg">--</span><small class="hupd"><span id="live-ind" class="live-ind off">○ KAPALI</span> <span id="h-upd"></span></small><div id="h-perp" class="h-perp"></div></div>
     <div class="hero-badges" id="h-badges"></div>
   </div>
   <section id="signal" class="signal"></section>
@@ -96,7 +96,7 @@
     <div id="sum-disc"></div>
   </div>
 </main>
-<footer>NEON//TERMINAL mobil · veri: Binance public API, CoinGecko, Hacker News · yöntem: <a href="https://github.com/Jakeschincariol/day-trader-skill" target="_blank" rel="noopener">Jakeschincariol/day-trader-skill</a> (MIT) · yatırım tavsiyesi değildir · sinyal garanti değildir · emirler yalnızca senin onayınla, anahtarlar yalnızca bu cihazda</footer>
+<footer>NEON//TERMINAL mobil · veri: Binance USDⓈ-M Futures public API, CoinGecko, Hacker News · yöntem: <a href="https://github.com/Jakeschincariol/day-trader-skill" target="_blank" rel="noopener">Jakeschincariol/day-trader-skill</a> (MIT) · yatırım tavsiyesi değildir · sinyal garanti değildir · emirler yalnızca senin onayınla, anahtarlar yalnızca bu cihazda</footer>
 <div id="sheet" class="hidden" role="dialog" aria-label="Ayarlar">
   <form id="sheet-form" class="sheet-box">
     <div class="sheet-title">⚙ AYARLAR</div>
@@ -108,8 +108,8 @@
   </form>
 </div>
 <div id="confirm" class="hidden" role="dialog" aria-label="Onay"><div class="sheet-box cf-box" id="cf-box"></div></div>
-<script src="engine.js?v=3"></script>
-<script src="app.js?v=3"></script>
-<script src="trade.js?v=3"></script>
+<script src="engine.js?v=4"></script>
+<script src="app.js?v=4"></script>
+<script src="trade.js?v=4"></script>
 </body>
 </html>

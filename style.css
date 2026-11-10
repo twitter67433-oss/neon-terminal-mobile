@@ -345,3 +345,11 @@ footer a{color:var(--c)}
   .signal{padding:12px}
   .cf-mode{font-size:24px}
 }
+/* v4: perp source badges, mark/funding */
+#h-src{margin-top:6px}
+.src-badge{display:inline-block;font-family:var(--disp);font-size:10px;letter-spacing:1px;padding:3px 8px;border:1px solid currentColor;font-weight:600}
+.src-badge.perp{color:var(--c);box-shadow:0 0 8px #00f0ff55 inset}
+.src-badge.spot{color:var(--r);border-width:2px;box-shadow:0 0 12px #ff335588;animation:bpulse 1.4s infinite}
+.src-why{display:block;font-size:10px;color:#ffb3c0;max-width:260px}
+.h-perp{flex-basis:100%;display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;font-family:var(--mono);color:var(--dim)}
+.h-perp b{color:#e7fdff;font-family:var(--tech)}

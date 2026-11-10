@@ -24,13 +24,21 @@ Tamamen statik (HTML/CSS/JS). Sunucu yok, hesap yok; API anahtarı yalnızca İ�
 | 10 | Analist | CoinGecko: piyasa değeri, FDV, hacim, arz, ATH uzaklığı |
 | 11 | Kongre | Tarayıcıdan erişilebilir kaynak yok (CORS) — yalnızca masaüstü sürümde |
 
+## Veri kaynağı: Binance USDⓈ-M Futures (PERP)
+
+Tüm piyasa verisi (analiz, grafik, sinyal, alarmlar, büyüklük, canlı fiyat, şerit) emirlerin gittiği **vadeli perpetual sözleşmeden** gelir: `fapi.binance.com` (`/fapi/v1/exchangeInfo`, `/klines`, `/ticker/24hr`, `/ticker/price`, `/premiumIndex`) ve `wss://fstream.binance.com/market/stream` (`@aggTrade`, `@kline_1m`, `@ticker`, `@markPrice@1s`). Kahraman alanında son fiyat, **Mark fiyatı, fonlama oranı ve sonraki fonlamaya geri sayım** görünür. Fiyatlar sözleşmenin `tickSize` değerine göre biçimlenir; stop/hedef bu adıma yuvarlanır. `PEPE` yazınca `1000PEPEUSDT` gibi kontratlar otomatik bulunur (1 kontrat = 1000 PEPE).
+
+Futures'a ulaşılamazsa (ör. HTTP 451 bölge kısıtı) ya da coinin perpetual'i yoksa veri spot'tan alınır ve kırmızı **"⚠ SPOT verisi (Futures erişilemedi)"** rozeti gösterilir; iki kaynak hiçbir zaman sessizce karıştırılmaz. Testnet'te işlem yaparken onay penceresi testnet mark fiyatını da gösterir (testnet fiyatı gerçek piyasadan farklı olabilir).
+
+*English:* all market data now comes from Binance USDⓈ-M perpetual futures (the same contract orders go to); spot is used only as a clearly flagged last resort.
+
 ## Sinyal (LONG / SHORT / BEKLE)
 
 Her analizden sonra panonun üstünde bir sinyal kartı çıkar: yön, güven yüzdesi ve o yön için giriş / stop / hedef (2R). Puan beş faktörün ağırlıklı toplamıdır (−100…+100): açılış aralığı kırılımı (yukarı/aşağı) %30, trend (EMA20/EMA50 ve gün içi VWAP) %25, momentum (1s/4s değişim, RSI uçları) %20, haber başlığı duyarlılığı %10, zaman makinesi LONG ve SHORT başarı farkı %15. +20 üstü LONG, −20 altı SHORT, arası BEKLE. Bu basit bir kuraldır, **garanti değildir**.
 
 ## Canlı veri
 
-Fiyat, 24s değişim, grafikteki son mum, alarmlar ve "son güncelleme" saati Binance WebSocket akışıyla (`<coin>@trade`, `@kline_1m`, `@ticker`) her işlemde güncellenir; çizim saniyede ~8 kez yapılır. Önce `stream.binance.com:9443`, olmazsa `data-stream.binance.vision` denenir; bağlantı koparsa artan beklemeyle yeniden bağlanır, bu sırada 2 saniyelik REST yoklamasına düşer. Göstergeler: **● CANLI** (WebSocket), **● CANLI (REST 2sn)**.
+Fiyat, 24s değişim, mark/fonlama, grafikteki son mum, alarmlar ve "son güncelleme" saati Binance Futures WebSocket akışıyla her işlemde güncellenir; çizim saniyede ~8 kez yapılır. Önce `fstream.binance.com/market/stream`, olmazsa eski `/stream` yolu denenir (veri gelmezse 7 sn içinde geçer); bağlantı koparsa artan beklemeyle yeniden bağlanır, bu sırada 2 saniyelik REST yoklamasına düşer. Göstergeler: **● CANLI** (WebSocket), **● CANLI (REST 2sn)**.
 
 ## İŞLEM bölümü
 

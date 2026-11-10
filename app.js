@@ -8,7 +8,9 @@ const LANG = params.get("lang") === "en" ? "en" : "tr";
 const STEP_NAMES = ["Tarayıcı","Haberler","Giriş","Çıkış Planı","Zaman Makinesi","Büyüklük","Risk","Emir Fişi","Alarmlar","Analist","Kongre"];
 
 function num(x){ return (x === null || x === undefined || isNaN(+x)) ? null : +x; }
-function fmtP(x){ x = num(x); if (x === null) return "—"; const a = Math.abs(x);
+let PX_DEC = null; // decimals from the analysed contract's tickSize
+function fmtP(x){ x = num(x); if (x === null) return "—"; if (PX_DEC !== null) return "$" + x.toLocaleString("en-US",{minimumFractionDigits:PX_DEC,maximumFractionDigits:PX_DEC}); return fmtG(x); }
+function fmtG(x){ x = num(x); if (x === null) return "—"; const a = Math.abs(x);
   if (a >= 1000) return "$" + x.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   if (a >= 1) return "$" + x.toFixed(4); if (a >= 0.01) return "$" + x.toFixed(5); return "$" + x.toPrecision(4); }
 function fmtBig(x){ x = num(x); if (x === null) return "—"; for (const [d,s] of [[1e12,"T"],[1e9,"B"],[1e6,"M"],[1e3,"K"]]) if (Math.abs(x) >= d) return "$" + (x/d).toFixed(2) + s; return "$" + x.toFixed(2); }
@@ -24,11 +26,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /* ---------------- clock + tape ---------------- */
 $("#tzl").textContent = TZL;
-setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString("tr-TR",{timeZone:TZ}); }, 1000);
+setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString("tr-TR",{timeZone:TZ}); if (typeof CUR !== "undefined" && CUR && CUR.src === "fut") renderPerp(); }, 1000);
 async function loadTape(){
   try { const d = await ENGINE.tape(["BTC","ETH","SOL","XRP","BNB","DOGE","ADA","AVAX","LINK","TON","TRX","DOT","LTC","SUI","INIT"]); if (!Array.isArray(d) || !d.length) return;
-    const html = d.map(q => `<span><b>${esc(q.base)}</b>${fmtP(q.price)} <i class="${cls(q.chg)}">${q.chg>=0?"▲":"▼"} ${pct(q.chg)}</i></span>`).join("");
-    $("#tape-track").innerHTML = html + html; $("#conn").textContent = "CANLI VERİ";
+    const html = d.map(q => `<span><b>${esc(q.base)}</b>${fmtG(q.price)} <i class="${cls(q.chg)}">${q.chg>=0?"▲":"▼"} ${pct(q.chg)}</i></span>`).join("");
+    $("#tape-track").innerHTML = html + html; $("#conn").textContent = d[0].src === "fut" ? "PERP CANLI" : "SPOT (Futures yok)";
   } catch(e){ $("#conn").textContent = "BAĞLANTI YOK"; }
 }
 loadTape(); setInterval(loadTape, 30000);
@@ -77,7 +79,7 @@ async function run(q){
   inp.value = ""; txt.textContent = q; history.replaceState(null, "", "?coin=" + encodeURIComponent(q) + (params.get("noboot")?"&noboot=1":""));
   $("#error").classList.add("hidden"); $("#dash").classList.add("hidden"); $("#progress").classList.remove("hidden");
   $("#prog-title").textContent = "TARANIYOR: " + q.toUpperCase(); $("#prog-fill").style.width = "0"; $("#prog-count").textContent = "0/11";
-  buildSteps(); setLive(false); $("#plog").innerHTML = "";
+  buildSteps(); setLive(false); PX_DEC = null; $("#plog").innerHTML = "";
   const steps = {}; let done = null, err = null, start = null;
   let tmN = 0;
   try {
@@ -89,10 +91,10 @@ async function run(q){
       const ev = queue.shift(); if (!ev) continue;
       if (ev.type === "_end") end = true;
       else if (ev.type === "error") err = ev.error;
-      else if (ev.type === "start"){ start = ev; $("#prog-title").textContent = "VERİ İNDİRİLİYOR: " + ev.symbol + "  " + fmtP(ev.price); }
+      else if (ev.type === "start"){ start = ev; $("#prog-title").textContent = "VERİ İNDİRİLİYOR: " + ev.symbol + (ev.src === "fut" ? " PERP" : " SPOT") + "  " + fmtG(ev.price); }
       else if (ev.type === "load"){ $("#prog-title").textContent = `5DK MUMLAR ${ev.done}/${ev.total}: ${start ? start.symbol : ""}`; $("#prog-fill").style.width = (ev.done/ev.total*8) + "%"; }
       else if (ev.type === "tmprog"){ const el = $("#st5 .st"); if (el) el.textContent = "Zaman Makinesi " + Math.round(ev.k*100) + "%"; }
-      else if (ev.type === "step"){ if (ev.n === 1 && start) $("#prog-title").textContent = "TARANIYOR: " + start.symbol + "  " + fmtP(start.price); steps[ev.n] = ev; await markStep(ev); }
+      else if (ev.type === "step"){ if (ev.n === 1 && start) $("#prog-title").textContent = "TARANIYOR: " + start.symbol + (start.src === "fut" ? " PERP" : " SPOT") + "  " + fmtG(start.price); steps[ev.n] = ev; await markStep(ev); }
       else if (ev.type === "done") done = ev;
     }
     await p;
@@ -121,11 +123,14 @@ function showError(msg){
 function panelFail(sel, step){ const p = document.querySelector(sel); p.classList.add("failed");
   return `<div class="err-line">✖ ${esc(step && step.error || "veri yok")}</div>`; }
 function render(d, steps){
-  CUR = d; const D = d.data;
+  CUR = d; const D = d.data; PX_DEC = (d.pdec !== undefined && d.pdec !== null) ? Math.min(d.pdec, 10) : null;
+  LIVE.mark = d.premium ? d.premium.mark : null; LIVE.funding = d.premium ? d.premium.funding : null; LIVE.next = d.premium ? d.premium.next : null; LIVE.chg = null;
   $("#progress").classList.add("hidden"); $("#dash").classList.remove("hidden");
   document.querySelectorAll(".grid .panel").forEach(p => { p.classList.remove("show","failed"); });
   // hero
-  $("#h-sym").textContent = d.symbol; $("#h-name").textContent = (D.analyst && D.analyst.name) || d.base;
+  $("#h-sym").textContent = d.symbol; $("#h-name").textContent = ((D.analyst && D.analyst.name) || d.base) + (d.mult > 1 ? ` · 1 kontrat = ${fmtN(d.mult)} ${d.base}` : "");
+  $("#h-src").innerHTML = d.src === "fut" ? `<span class="src-badge perp">PERP · Binance Futures</span>` : `<span class="src-badge spot">⚠ SPOT verisi (Futures erişilemedi)</span><small class="src-why">${esc(d.spot_reason || "")}</small>`;
+  renderPerp();
   $("#h-price").textContent = fmtP(d.price);
   const chg = d.chg24;
   const hc = $("#h-chg"); hc.textContent = pct(chg) + " 24s"; hc.className = "chg " + cls(chg);
@@ -192,7 +197,7 @@ function renderChart(d, tf){
     grid: { vertLines: { color: "#0e2230" }, horzLines: { color: "#0e2230" } },
     crosshair: { mode: 0, vertLine: { color: "#ff2bd6", labelBackgroundColor: "#ff2bd6" }, horzLine: { color: "#00f0ff", labelBackgroundColor: "#00a8b5" } },
     rightPriceScale: { borderColor: "#12324a" }, timeScale: { borderColor: "#12324a", timeVisible: true, secondsVisible: false } });
-  const prec = d.price >= 1000 ? 2 : d.price >= 1 ? 4 : d.price >= 0.01 ? 5 : 8;
+  const prec = PX_DEC !== null ? PX_DEC : d.price >= 1000 ? 2 : d.price >= 1 ? 4 : d.price >= 0.01 ? 5 : 8;
   cseries = chart.addCandlestickSeries({ upColor: "#39ff14", downColor: "#ff3355", borderUpColor: "#39ff14", borderDownColor: "#ff3355",
     wickUpColor: "#39ff14aa", wickDownColor: "#ff3355aa", priceFormat: { type: "price", precision: prec, minMove: Math.pow(10,-prec) },
     autoscaleInfoProvider: orig => { const r = orig(); const P = chartPlan(D); if (r && P) { const pr = r.priceRange;
@@ -343,25 +348,30 @@ function renderAlerts(price, first){
   lastPrice = price;
 }
 /* ---------------- realtime: Binance WebSocket (trade + kline_1m + ticker), REST 2s fallback ---------------- */
-const WS_HOSTS = ["wss://stream.binance.com:9443", "wss://data-stream.binance.vision"];
-const LIVE = { on: false, sym: null, ws: null, hostI: +(sessionStorage.getItem("neon.wsh") || 0), retry: 0, timer: null, poll: null, pending: false, lastPaint: 0, paintT: null,
+/* futures: Binance moved USDⓈ-M market streams to /market (the legacy /stream path opens but stays silent), so try /market first */
+const WS = { fut: { hosts: ["wss://fstream.binance.com/market/stream", "wss://fstream.binance.com/stream"], streams: s => `${s}@aggTrade/${s}@kline_1m/${s}@ticker/${s}@markPrice@1s` },
+  spot: { hosts: ["wss://stream.binance.com:9443/stream", "wss://data-stream.binance.vision/stream"], streams: s => `${s}@trade/${s}@kline_1m/${s}@ticker` } };
+const wsSrc = () => (CUR && CUR.src === "spot") ? "spot" : "fut", WS_HOSTS = { get length(){ return WS[wsSrc()].hosts.length; } };
+const LIVE = { on: false, sym: null, ws: null, hostI: +(sessionStorage.getItem("neon.wsh4") || 0), mark: null, funding: null, next: null, retry: 0, timer: null, poll: null, pending: false, lastPaint: 0, paintT: null,
   price: null, prev: null, chg: null, hi: null, lo: null, tt: 0, k1: null, mode: "off", ticks: 0 };
 window.LIVE = LIVE;
 function setInd(mode){ LIVE.mode = mode; const el = $("#live-ind"); if (!el) return;
-  el.className = "live-ind " + mode; el.textContent = mode === "ws" ? "● CANLI" : mode === "rest" ? "● CANLI (REST 2sn)" : mode === "conn" ? "○ BAĞLANIYOR" : "○ KAPALI"; }
+  el.className = "live-ind " + mode; el.textContent = mode === "ws" ? "● CANLI" + (wsSrc() === "fut" ? " PERP" : " SPOT") : mode === "rest" ? "● CANLI (REST 2sn)" : mode === "conn" ? "○ BAĞLANIYOR" : "○ KAPALI"; }
 function setLive(on){ $("#live").checked = on; if (on && CUR) liveStart(CUR.symbol); else liveStop(); }
 $("#live").addEventListener("change", e => setLive(e.target.checked));
 function liveStop(){ LIVE.on = false; LIVE.sym = null; clearTimeout(LIVE.timer); stopPoll(); const w = LIVE.ws; LIVE.ws = null; if (w) try { w.close(); } catch(e){} setInd("off"); }
 function liveStart(sym){ liveStop(); LIVE.on = true; LIVE.sym = sym; LIVE.retry = 0; LIVE.prev = null; LIVE.price = null; liveConnect(); }
 function liveConnect(){
-  if (!LIVE.on) return; const sym = LIVE.sym, s = sym.toLowerCase(), url = WS_HOSTS[LIVE.hostI % WS_HOSTS.length] + `/stream?streams=${s}@trade/${s}@kline_1m/${s}@ticker`;
+  if (!LIVE.on) return; const sym = LIVE.sym, s = sym.toLowerCase(), W = WS[wsSrc()], url = W.hosts[LIVE.hostI % W.hosts.length] + "?streams=" + W.streams(s);
   setInd(LIVE.mode === "rest" ? "rest" : "conn");
   let ws; try { ws = new WebSocket(url); } catch(e){ return wsDown(null, false); }
-  LIVE.ws = ws; let opened = false; const ot = setTimeout(() => { if (!opened) try { ws.close(); } catch(e){} }, 7000);
-  ws.onopen = () => { opened = true; clearTimeout(ot); };
+  LIVE.ws = ws; let opened = false, gotData = false; const ot = setTimeout(() => { if (!opened || !gotData) try { opened = gotData; ws.close(); } catch(e){} }, 7000);
+  ws.onopen = () => { opened = true; };
   ws.onmessage = ev => { if (LIVE.ws !== ws || LIVE.sym !== sym) return; let m; try { m = JSON.parse(ev.data); } catch(e){ return; } const d = m.data || m;
-    if (!opened || LIVE.mode !== "ws"){ LIVE.retry = 0; stopPoll(); setInd("ws"); try { sessionStorage.setItem("neon.wsh", LIVE.hostI % WS_HOSTS.length); } catch(e){} }
-    if (d.e === "trade"){ tick(+d.p, d.T); }
+    if (!gotData){ gotData = true; clearTimeout(ot); }
+    if (LIVE.mode !== "ws"){ LIVE.retry = 0; stopPoll(); setInd("ws"); try { sessionStorage.setItem("neon.wsh4", LIVE.hostI % WS_HOSTS.length); } catch(e){} }
+    if (d.e === "trade" || d.e === "aggTrade"){ tick(+d.p, d.T); }
+    else if (d.e === "markPriceUpdate"){ LIVE.mark = +d.p; LIVE.funding = +d.r; LIVE.next = +d.T; schedule(); }
     else if (d.e === "24hrTicker"){ LIVE.chg = +d.P; LIVE.hi = +d.h; LIVE.lo = +d.l; if (LIVE.price === null) tick(+d.c, d.E); else schedule(); }
     else if (d.e === "kline"){ LIVE.k1 = d.k; } };
   ws.onerror = () => {};
@@ -371,7 +381,10 @@ function wsDown(ws, opened){ LIVE.ws = null; if (!LIVE.on) return; if (!opened) 
   startPoll(); const delay = Math.min(30000, 1000*Math.pow(2, Math.min(LIVE.retry, 5)));
   clearTimeout(LIVE.timer); LIVE.timer = setTimeout(liveConnect, delay); }
 function startPoll(){ if (LIVE.poll) return; setInd("rest"); const f = async () => { if (!LIVE.on || !LIVE.sym) return; const sym = LIVE.sym;
-    try { const t = await ENGINE.ticker(sym); if (LIVE.sym !== sym || LIVE.mode === "ws") return; LIVE.chg = t.chg; LIVE.hi = t.high; LIVE.lo = t.low; tick(t.price, Date.now()); } catch(e){ setInd("rest"); } };
+    const src = wsSrc();
+    try { const t = await ENGINE.ticker(sym, src); if (LIVE.sym !== sym || LIVE.mode === "ws") return; LIVE.chg = t.chg; LIVE.hi = t.high; LIVE.lo = t.low;
+      if (src === "fut") try { const pm = await ENGINE.premium(sym); LIVE.mark = pm.mark; LIVE.funding = pm.funding; LIVE.next = pm.next; } catch(e){}
+      tick(t.price, Date.now()); } catch(e){ setInd("rest"); } };
   f(); LIVE.poll = setInterval(f, 2000); }
 function stopPoll(){ clearInterval(LIVE.poll); LIVE.poll = null; }
 function tick(p, T){ if (!isFinite(p) || p <= 0) return; LIVE.price = p; LIVE.tt = T || Date.now(); LIVE.ticks++; applyBar(p, LIVE.tt); schedule(); }
@@ -390,8 +403,13 @@ function paint(){ LIVE.pending = false; LIVE.lastPaint = performance.now(); if (
     try { cseries.update({ time: b[0]+off, open: b[1], high: b[2], low: b[3], close: b[4] }); } catch(e){} }
   if (CUR.data.alerts) try { renderAlerts(p, false); } catch(e){}
   const sn = $("#sig-now"); if (sn && CUR.data.signal){ const a = CUR.data.signal.active; sn.innerHTML = `şimdi <b>${fmtP(p)}</b> · girişe ${pct((a.entry/p-1)*100)}`; }
+  renderPerp();
   window.TRADE && TRADE.onTick && TRADE.onTick(p);
 }
+function renderPerp(){ const el = $("#h-perp"); if (!el) return; if (!CUR || CUR.src !== "fut"){ el.innerHTML = ""; return; }
+  const f = LIVE.funding, n = LIVE.next, left = n ? Math.max(0, n - Date.now()) : null;
+  const hms = left === null ? "—" : [Math.floor(left/3600e3), Math.floor(left/60e3)%60, Math.floor(left/1e3)%60].map(x => String(x).padStart(2, "0")).join(":");
+  el.innerHTML = `<span>Mark <b>${LIVE.mark ? fmtP(LIVE.mark) : "—"}</b></span><span>Fonlama <b class="${f === null ? "" : f >= 0 ? "up" : "dn"}">${f === null || isNaN(f) ? "—" : (f >= 0 ? "+" : "") + (f*100).toFixed(4) + "%"}</b></span><span>Sonraki fonlama <b id="h-fcd">${hms}</b></span>`; }
 async function pollPrice(){ if (CUR && !LIVE.on) setLive(true); }
 /* analyst */
 function renderAnalyst(a){
@@ -402,8 +420,8 @@ function renderAnalyst(a){
   <div class="kv"><span class="k">Piyasa değeri</span><span class="v" id="an-mc">—</span><span class="k">FDV</span><span class="v">${fmtBig(a.fully_diluted_valuation)}</span>
   <span class="k">24s hacim</span><span class="v">${fmtBig(a.total_volume)} <small>(${a.market_cap ? (a.total_volume/a.market_cap*100).toFixed(1) : "—"}%)</small></span></div>
   <div class="supply"><div class="lab kv"><span class="k">Arz ${sp===null?"":"(%"+sp.toFixed(1)+")"}</span><span class="v">${fmtN(circ)} / ${mx ? fmtN(mx) : "∞"}</span></div><div class="bar"><div data-w="${sp ?? 0}"></div></div></div>
-  <div class="kv"><span class="k">ATH ${a.ath_date ? "(" + a.ath_date.slice(0,10) + ")" : ""}</span><span class="v">${fmtP(a.ath)} <span class="${cls(a.ath_change_percentage)}">${pct(a.ath_change_percentage,1)}</span></span></div>
-  <div class="athbar"><div class="mk" data-l="${athPos}"></div><span style="left:0">ATL ${fmtP(a.atl)}</span><span style="right:0">ATH</span></div>
+  <div class="kv"><span class="k">ATH ${a.ath_date ? "(" + a.ath_date.slice(0,10) + ")" : ""}</span><span class="v">${fmtG(a.ath)} <span class="${cls(a.ath_change_percentage)}">${pct(a.ath_change_percentage,1)}</span></span></div>
+  <div class="athbar"><div class="mk" data-l="${athPos}"></div><span style="left:0">ATL ${fmtG(a.atl)}</span><span style="right:0">ATH</span></div>
   <div class="chgs">${[["24s","24h"],["7g","7d"],["30g","30d"],["1y","1y"]].map(([l,k]) => `<div><small>${l}</small><span class="${cls(ch(k))}">${pct(ch(k),1)}</span></div>`).join("")}</div>`;
   countUp($("#an-mc"), a.market_cap, fmtBig);
   setTimeout(() => { const s = document.querySelector(".supply .bar div"); if (s) s.style.width = s.dataset.w + "%"; const m = document.querySelector(".athbar .mk"); if (m) m.style.left = `calc(${m.dataset.l}% - 2px)`; }, 200);
