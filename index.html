@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05070b">
+<title>NEON//TERMINAL — Kripto</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2305070b'/%3E%3Ctext x='3' y='13' font-size='13' fill='%2339ff14'%3E%3E%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="style.css">
+<script src="vendor/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<div id="crt"></div>
+
+<!-- boot -->
+<div id="boot">
+  <div class="boot-inner">
+    <pre id="boot-logo" class="glitch" data-text="NEON//TERMINAL">NEON//TERMINAL</pre>
+    <div id="boot-lines"></div>
+    <div class="boot-bar"><div id="boot-fill"></div></div>
+    <div id="boot-pct">0%</div>
+  </div>
+</div>
+
+<header id="top">
+  <div class="brand"><span class="glitch" data-text="NEON//TERMINAL">NEON//TERMINAL</span><small>11 BECERİ · KRİPTO · 7/24</small></div>
+  <div class="hdr-right">
+    <span class="dot live"></span><span id="conn">CANLI VERİ</span>
+    <span class="sep">│</span><span id="clock">--:--:--</span><small id="tzl">Berlin</small><button id="gear" type="button" aria-label="Ayarlar">⚙</button>
+  </div>
+</header>
+
+<div id="tape"><div id="tape-track"></div></div>
+
+<form id="cmd" autocomplete="off">
+  <label for="cmd-input" class="prompt">coin&gt;</label>
+  <div class="cmd-wrap">
+    <input id="cmd-input" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go" aria-label="coin">
+    <div id="cmd-mirror"><span id="cmd-text"></span><span id="cursor">█</span><span id="cmd-ghost"></span></div>
+  </div>
+  <button type="submit">ÇALIŞTIR ⏎</button>
+</form>
+<div class="hint">Örnek: <b>btc</b> · <b>solana</b> · <b>init</b> · <b>INITUSDT</b> · <b>ETH-USD</b> — Enter'a bas. Binance USDT paritesi kullanılır. Hiçbir emir gönderilmez, hiçbir cüzdana dokunulmaz.</div>
+
+<section id="progress" class="hidden">
+  <div class="progress-head"><span id="prog-title">TARANIYOR</span><span id="prog-count">0/11</span></div>
+  <div class="prog-bar"><div id="prog-fill"></div></div>
+  <div id="steps"></div>
+  <div id="plog"></div>
+</section>
+
+<section id="error" class="hidden">
+  <div class="err-box">
+    <div class="err-title glitch red" data-text="SİSTEM HATASI">SİSTEM HATASI</div>
+    <div id="err-msg"></div>
+    <div class="err-sub">Coin adını kontrol et (örn. btc, eth, sol, init) ve tekrar dene.</div>
+  </div>
+</section>
+
+<main id="dash" class="hidden">
+  <div id="hero">
+    <div class="hero-sym"><span id="h-sym">---</span><small id="h-name"></small></div>
+    <div class="hero-price"><span id="h-price">--</span><span id="h-chg" class="chg">--</span></div>
+    <div class="hero-badges" id="h-badges"></div>
+  </div>
+  <div class="grid">
+    <div class="panel p-chart" data-n="1"><h3><span class="num">01</span> GRAFİK &amp; TARAYICI <span class="tabs"><button data-tf="5m" class="on">5dk</button><button data-tf="1h">1s</button></span></h3>
+      <div id="chart"><canvas id="orbox"></canvas></div>
+      <div class="legend"><span class="lg e">━ Giriş</span><span class="lg s">━ Stop</span><span class="lg t">━ Hedef</span><span class="lg o">▭ Açılış aralığı</span></div>
+    </div>
+    <div class="panel p-rsi" data-n="1"><h3><span class="num">01</span> RSI / SMA</h3>
+      <svg id="gauge" viewBox="0 0 200 120"></svg>
+      <div id="scan-info" class="kv"></div>
+      <canvas id="spark" height="60"></canvas>
+    </div>
+    <div class="panel p-entry" data-n="3"><h3><span class="num">03</span> GİRİŞ ZAMANLAYICI</h3><div id="entry-box"></div></div>
+    <div class="panel p-plan" data-n="4"><h3><span class="num">04</span> ÇIKIŞ PLANI</h3><div id="plan-box"></div></div>
+    <div class="panel p-tm" data-n="5"><h3><span class="num">05</span> ZAMAN MAKİNESİ <small id="tm-n"></small></h3>
+      <div class="tm-wrap"><canvas id="hist" height="190"></canvas><div class="donut-wrap"><svg id="donut" viewBox="0 0 120 120"></svg><div id="donut-legend"></div></div></div>
+      <div id="tm-info" class="kv row"></div>
+    </div>
+    <div class="panel p-budget" data-n="6"><h3><span class="num">06</span> POZİSYON BÜYÜKLÜĞÜ</h3><div id="budget-box"></div></div>
+    <div class="panel p-risk" data-n="7"><h3><span class="num">07</span> RİSK KONTROLÜ</h3><div id="risk-box"></div></div>
+    <div class="panel p-ticket" data-n="8"><h3><span class="num">08</span> EMİR FİŞİ</h3><div id="ticket-box"></div></div>
+    <div class="panel p-alerts" data-n="9"><h3><span class="num">09</span> FİYAT ALARMLARI <label class="live-toggle"><input type="checkbox" id="live"> canlı 15sn</label></h3><div id="alerts-box"></div></div>
+    <div class="panel p-analyst" data-n="10"><h3><span class="num">10</span> ANALİST · COINGECKO</h3><div id="analyst-box"></div></div>
+    <div class="panel p-news" data-n="2"><h3><span class="num">02</span> HABERLER</h3><div id="news-box"></div></div>
+    <div class="panel p-congress" data-n="11"><h3><span class="num">11</span> KONGRE İŞLEMLERİ</h3><div id="congress-box"></div></div>
+  </div>
+  <div id="summary">
+    <div class="sum-title glitch" data-text="ÖZET">ÖZET</div>
+    <div id="sum-grid"></div>
+    <div id="sum-disc"></div>
+  </div>
+</main>
+<footer>NEON//TERMINAL mobil · veri: Binance public API, CoinGecko, Hacker News · yöntem: <a href="https://github.com/Jakeschincariol/day-trader-skill" target="_blank" rel="noopener">Jakeschincariol/day-trader-skill</a> (MIT) · yalnızca analiz — yatırım tavsiyesi değildir · KAĞIT MOD</footer>
+<div id="sheet" class="hidden" role="dialog" aria-label="Ayarlar">
+  <form id="sheet-form" class="sheet-box">
+    <div class="sheet-title">⚙ AYARLAR</div>
+    <label>Hesap büyüklüğü ($)<input type="number" inputmode="decimal" step="any" min="10" name="account_size"></label>
+    <label>İşlem başı max zarar ($)<input type="number" inputmode="decimal" step="any" min="0.1" name="max_loss_per_trade"></label>
+    <label>Tutma süresi (saat)<input type="number" inputmode="decimal" step="any" min="0.5" max="72" name="hold_hours"></label>
+    <div class="sheet-note">Bu cihazda saklanır (localStorage). Hiçbir yere gönderilmez.</div>
+    <div class="sheet-btns"><button type="button" id="sheet-reset">VARSAYILAN</button><button type="button" id="sheet-cancel">İPTAL</button><button type="submit">KAYDET</button></div>
+  </form>
+</div>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
