@@ -106,7 +106,7 @@ function select(mint){ const t = S.all.get(mint); if (!t) return; if (unsubSel){
   if (t.curve){ curveNow(t.curve).then(c => { if (c && S.sel === t){ onCurve(t, c, true); } }).catch(() => {}); unsubSel = curveSub(t.curve, c => onCurve(t, c)); }
   holders(t); const d = $("#pf-detail"); d && d.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" }); }
 function oddCheck(t, c){ /* some new pump.fun curves start with non-standard virtual SOL (seen on-chain: 0.67 and 964 SOL instead of 30) */
-  const v0 = c.vSol - c.rSol; if (t.odd === undefined){ t.odd = Math.abs(v0 - 30) > 1.5 ? v0 : 0; if (t.odd) t.mcap0 = c.mcap; } }
+  const v0 = c.vSol - c.rSol; if (t.odd === undefined){ t.odd = Math.abs(v0 - 30) > 1.5 ? v0 : 0; if (t.odd){ t.mcap0 = c.mcap; t.hist = []; } } }
 function onCurve(t, c, first){ oddCheck(t, c); const prev = lastC; lastC = c; t.mcap = c.mcap; t.prog = c.prog; t.complete = c.complete; t.hist.push([Date.now(), c.mcap]); if (t.hist.length > 400) t.hist.shift();
   if (prev && !first && !S.key){ const d = c.vSol - prev.vSol; if (Math.abs(d) > 1e-6) addTrade({ t: Date.now(), side: d > 0 ? "buy" : "sell", sol: Math.abs(d), mcap: c.mcap, src: "curve" }); }
   risk(t); detailLive(); }
