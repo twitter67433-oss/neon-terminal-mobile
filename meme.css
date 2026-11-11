@@ -160,3 +160,9 @@ body.mm-flash-loss::after{content:"";position:fixed;inset:0;background:rgba(255,
   .mm-goal-fill,.mm-dot,.mm-pop,body.mm-shake,body.mm-pulse .mm-hero,body.mm-pulse #meme,body.mm-flash-loss::after{animation:none!important;transition:none!important}
   .mm-pop{opacity:1;transform:translate(-50%,-50%)}
 }
+
+/* v7.4.1 — SIM $10k preset + serbest mod */
+.mm-simquick{display:flex;gap:8px;align-items:center;margin:-2px 0 10px;flex-wrap:wrap}
+.mm-simquick .mini{flex:0 0 auto;padding:8px 12px}
+.mm-simquick .chk{margin:0;font-size:11px}
+.mm-free-pill{color:#ffe600;border-color:#ffe600;text-shadow:0 0 8px #ffe60088}
