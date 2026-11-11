@@ -102,3 +102,5 @@ body.meme-on #nav button[data-go="meme"]::after{content:" ●";color:#ff2bd6}
 .sv-banner{font-family:var(--disp);font-size:11px;letter-spacing:1px;text-align:center;padding:6px;border-radius:10px;margin-bottom:8px;border:1px solid #00f0ff;color:#00f0ff;background:rgba(0,240,255,.06)}
 .sv-banner.ok{border-color:#39ff14;color:#39ff14}.sv-banner.bad{border-color:#ff3355;color:#ff8899;background:rgba(255,51,85,.08)}.sv-banner small{display:block;font-family:var(--tech);font-size:10px;letter-spacing:0;color:var(--dim)}
 .rm-hero{height:150px}.rm-err{max-height:140px}
+.sv-kv{display:flex;flex-direction:column;gap:5px;font-size:12px;margin:4px 0 10px}.sv-kv>div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-bottom:1px dashed #12324a;padding-bottom:3px}
+.sv-kv span{color:var(--dim);white-space:nowrap}.sv-kv b{font-family:var(--tech);font-weight:400;color:#e7fdff;text-align:right;overflow-wrap:anywhere}
