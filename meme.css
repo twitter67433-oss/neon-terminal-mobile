@@ -171,3 +171,16 @@ body.mm-flash-loss::after{content:"";position:fixed;inset:0;background:rgba(255,
 .mm-scst{display:flex;flex-direction:column;gap:4px;margin-top:6px;font-size:12px}
 .mm-scst div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed rgba(0,240,255,.12);padding:2px 0}
 .mm-scst span{opacity:.75}
+
+/* v7.6 compact agent grid: header + one summary line; tap a card for details */
+.ags.compact{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ags.compact .ag{cursor:pointer;min-width:0}
+.ags.compact .ag .ag-h{font-size:11px;gap:4px}
+.ags.compact .ag .ag-h b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ags.compact .ag .ag-st{font-size:10px;margin-left:auto;white-space:nowrap}
+.ags.compact .ag:not(.open) .ag-b > :not(.ag-l){display:none}
+.ags.compact .ag:not(.open) .ag-l{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:10.5px}
+.ags.compact .ag.open{grid-column:1 / -1}
+.ags.compact .ag-b > div{display:flex;justify-content:space-between;gap:6px;font-size:11.5px}
+.ags.compact .ag-b > div > span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ag-tag{font-style:normal;font-size:9.5px;border:1px solid rgba(255,43,214,.5);border-radius:3px;padding:0 3px;margin-right:3px;color:#ff9be8}

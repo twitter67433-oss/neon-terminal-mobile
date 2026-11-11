@@ -49,7 +49,7 @@ function pumpScore(flow, now, cfg){ const c = Object.assign({}, SC_DEF, cfg || {
     vel: m.vel === null ? 0 : W.vel*lin(m.vel, 0, 15),
     dd: m.dd === null ? 0 : W.dd*(1 - lin(m.dd, 0, 20)),
     clean: W.clean*(1 - lin(m.earlyShare, 0.2, 0.6))*(1 - lin(m.sameFrac, 0.15, 0.45))*(1 - 0.5*lin(m.earlyJump, 0.3, 1)) };
-  const score = Math.round(Object.values(P).reduce((a, b) => a + b, 0));
+  const bonus = Math.max(0, Math.min(20, +c.bonus || 0)), score = Math.min(100, Math.round(Object.values(P).reduce((a, b) => a + b, 0) + bonus));
   let hard = null;
   if (m.devSold) hard = "dev sattı";
   else if (m.nBuy + m.nSell === 0) hard = "işlem akışı yok";
@@ -69,6 +69,7 @@ function pumpScore(flow, now, cfg){ const c = Object.assign({}, SC_DEF, cfg || {
   if (m.dd !== null && m.dd >= 5) why.push(`zirveden −%${m.dd.toFixed(0)}`);
   if (m.earlyJump >= 0.3) why.push(`ilk sn'lerde +%${Math.round(m.earlyJump*100)} sıçrama`);
   if (m.earlyW >= 2) why.push(`ilk ${c.bundleSec} sn ${m.earlyW} cüzdan`);
+  if (bonus) why.push(`bonus +${bonus}`);
   const pass = !hard && score >= c.min;
   return { score, pass, hard, parts: P, m, why, min: c.min };
 }

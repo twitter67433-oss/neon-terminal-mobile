@@ -3,6 +3,8 @@
    Modes: SIM (default · paper money, real live market data, realistic fills/fees/latency, nothing sent) and GERÇEK (BOT CÜZDANI, real SOL).
    Auto is OFF after every page load unless "otomatik başlat" is on. Manual trades always need ONAYLA; Grok can only suggest.
    v7.4: optional compounding (entry = equity × %), animated USD goal bar, win/loss effects, simplified MEME layout.
+   v7.6: agent cards (TARAYICI, GİRİŞ, ÇIKIŞ, BÜTÇE, ALARM, HABER, AKILLI PARA, RUG DEDEKTÖRÜ, ZAMAN MAKİNESİ — agents.js); rug risk + entry gate +
+         smart-money bonus feed the buy decision; none of them can place orders.
    v7.5: "pump skoru" from each candidate's own trade flow (keyless Solana RPC logsSubscribe → pump.fun TradeEvents) with hard rejects,
          "alırdı" learning log while OTO is off, dynamic exits (early stop, breakeven, partial take-profit, tightening trail, flow reversal,
          dev/top-holder dump, flat time stop) and a SIM fill haircut on fast moves. Risk limits (maxTrade, budget, dailyLoss, maxPos, pauses) unchanged. */
@@ -103,6 +105,7 @@ const curveOf = m => { const e = ST.curves.get(m); return e && e.c; };
    Checked 2026-11-11: PumpPortal subscribeTokenTrade needs a funded API key; Solana RPC logsSubscribe({ mentions: [mint] }) on publicnode
    streams every pump.fun trade of that token (TradeEvent → wallet, SOL, buy/sell). Subscribes are paced ~650 ms (publicnode drops bursts).
    Fallback when logs stay silent: buy/sell deltas from the bonding-curve account (no wallet → buyer count and concentration unknown). */
+const AGT = () => window.AGENTS; const agTrade = (m, r) => { try { AGT() && AGT().onTrade(m, r); } catch(e){} };
 const FLOW = (() => {
   const S = { ws: null, open: false, id: 1, q: [], qT: null, last: 0, req: new Map(), reqAt: new Map(), bySub: new Map(), want: new Map(), retry: 0, notes: 0, trades: 0 };
   const url = () => { const c = X().C.ws; return /^wss:\/\//.test(c || "") ? c : "wss://solana-rpc.publicnode.com"; };
@@ -114,7 +117,7 @@ const FLOW = (() => {
       if (j.method !== "logsNotification") return; const m = S.bySub.get(j.params.subscription), e = m && S.want.get(m); if (!e) return; const v = j.params.result.value; if (!v || v.err) return; S.notes++;
       if (e.sigs.has(v.signature)) return; e.sigs.add(v.signature); if (e.sigs.size > 4000) e.sigs.clear();
       const me = isReal() && W().exists() ? W().pub() : null, now = Date.now();
-      for (const l of v.logs || []){ const t = COPY.decodeTrade(l); if (!t || t.mint !== m || (me && t.user === me)) continue; S.trades++; e.tr.push({ t: now, user: t.user, sol: t.sol, isBuy: t.isBuy, mcap: t.mcap }); trim(e.tr); } };
+      for (const l of v.logs || []){ const t = COPY.decodeTrade(l); if (!t || t.mint !== m || (me && t.user === me)) continue; S.trades++; const rec = { t: now, user: t.user, sol: t.sol, tok: t.tok, isBuy: t.isBuy, mcap: t.mcap }; e.tr.push(rec); trim(e.tr); agTrade(m, rec); } };
     ws.onclose = () => { S.ws = null; S.open = false; S.bySub.clear(); S.req.clear(); S.reqAt.clear(); S.q = []; clearTimeout(S.qT); S.qT = null; for (const e of S.want.values()) e.sub = null; if (S.want.size) setTimeout(wsOpen, Math.min(15000, 1000*2**S.retry++)); };
     ws.onerror = () => {}; }
   function step(){ S.qT = null; const m = S.q.shift(); if (m === undefined) return; if (!S.open || !S.ws || S.ws.readyState !== 1){ S.q.unshift(m); return; }
@@ -135,7 +138,7 @@ const FLOW = (() => {
     try { const L = await T().ph.rpc("getSignaturesForAddress", [mint, { limit: 50, commitment: "confirmed" }]); const q = (L || []).filter(x => !x.err && !e.sigs.has(x.signature)).slice(0, 40);
       for (let i = 0; i < q.length && Date.now() < end; i += 4) await Promise.all(q.slice(i, i + 4).map(async x => { try { const tx = await T().ph.rpc("getTransaction", [x.signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" }]);
         if (!tx || !tx.meta || tx.meta.err || e.sigs.has(x.signature)) return; e.sigs.add(x.signature); const at = (tx.blockTime || x.blockTime || Date.now()/1000)*1000;
-        for (const l of tx.meta.logMessages || []){ const t = COPY.decodeTrade(l); if (!t || t.mint !== mint || (me && t.user === me)) continue; n++; S.trades++; e.tr.push({ t: at, user: t.user, sol: t.sol, isBuy: t.isBuy, mcap: t.mcap, bf: true }); } } catch(err){} }));
+        for (const l of tx.meta.logMessages || []){ const t = COPY.decodeTrade(l); if (!t || t.mint !== mint || (me && t.user === me)) continue; n++; S.trades++; const rec = { t: at, user: t.user, sol: t.sol, tok: t.tok, isBuy: t.isBuy, mcap: t.mcap, bf: true }; e.tr.push(rec); agTrade(mint, rec); } } catch(err){} }));
       e.tr.sort((a, b) => a.t - b.t); } catch(err){} S.bf = (S.bf || 0) + 1; S.bfN = (S.bfN || 0) + n; return n; }
   function flow(mint){ const e = S.want.get(mint); if (!e) return null; const logs = e.tr.length > 0; return { dev: e.dev, t0: e.t0, mcap0: e.mcap0, trades: logs ? e.tr : e.ctr, mcaps: e.mc, src: logs ? "logs" : "curve", subbed: e.sub != null }; }
   return { track, untrack, flow, backfill, get stat(){ return { bf: S.bf || 0, bfN: S.bfN || 0, open: S.open, subs: [...S.want.values()].filter(e => e.sub != null).length, want: S.want.size, notes: S.notes, trades: S.trades }; } };
@@ -146,34 +149,39 @@ const simHcNow = mc => !isReal() && C.x && C.x.simHc ? SCORE.simHaircut(volOf(mc
 /* Pure size math (exported for tests). Caps never raise a limit; they only shrink the ticket.
    Compounding ON: raw = equity × (pct/100) × cmpMult; OFF: base (or copy-ratio / wallet size).
    Then × risk ladder (R.mult), then min(maxTrade, budget left, cash − fee buffer, optional wallet cap). */
-function sizeCalc(o){
+function sizeCalc(o){ return sizeExplain(o).size; }
+/* same math as before, plus which limit decided the ticket (BÜTÇE agent) */
+function sizeExplain(o){
   const riskMult = isFinite(+o.riskMult) && +o.riskMult > 0 ? +o.riskMult : 1;
-  let raw;
+  let raw, by;
   if (o.cmpOn){
     const eq = +o.equity;
     const pct = Math.max(1, Math.min(25, +o.pct || 10));
     const cm = Math.max(1, Math.min(2, +o.cmpMult || 1));
-    raw = (eq > 0 && isFinite(eq)) ? eq*(pct/100)*cm : (+o.base || 0)*cm;
-  } else if (o.src === "copy" && o.sizeMode === "ratio" && o.srcSol) raw = +o.srcSol * (+o.ratio || 0);
-  else if (o.walletSize > 0) raw = +o.walletSize;
-  else raw = +o.base || 0;
-  let size = raw * riskMult;
-  if (o.cmpOn && o.walletSize > 0) size = Math.min(size, +o.walletSize * riskMult);
-  if (!(size > 0) || !isFinite(size)) return 0;
+    raw = (eq > 0 && isFinite(eq)) ? eq*(pct/100)*cm : (+o.base || 0)*cm; by = `bileşik %${pct} × ${cm}x`;
+  } else if (o.src === "copy" && o.sizeMode === "ratio" && o.srcSol){ raw = +o.srcSol * (+o.ratio || 0); by = "kopya oranı"; }
+  else if (o.walletSize > 0){ raw = +o.walletSize; by = "cüzdan boyutu"; }
+  else { raw = +o.base || 0; by = "temel boyut"; }
+  if (riskMult !== 1) by += ` × risk ${riskMult}x`;
+  let size = raw * riskMult, room = null, cashRoom = null;
+  const out = (sz, b) => ({ size: sz, by: b, raw, riskMult, room, cashRoom, free: !!o.free });
+  if (o.cmpOn && o.walletSize > 0 && +o.walletSize * riskMult < size){ size = +o.walletSize * riskMult; by = "cüzdan boyutu"; }
+  if (!(size > 0) || !isFinite(size)) return out(0, "giriş yok");
   if (!o.free){
-    size = Math.min(size, +o.maxTrade);
-    const room = +o.budget - (o.deployed || 0) - (o.infl || 0);
-    if (isFinite(room)) size = Math.min(size, room);
+    if (+o.maxTrade < size){ size = +o.maxTrade; by = "işlem başı max"; }
+    room = +o.budget - (o.deployed || 0) - (o.infl || 0);
+    if (isFinite(room) && room < size){ size = room; by = "toplam bütçe"; }
   }
   const feeBuf = o.feeBuf == null ? 0.004 : +o.feeBuf;
-  if (o.cash !== null && o.cash !== undefined && isFinite(+o.cash)) size = Math.min(size, +o.cash - (o.infl || 0) - feeBuf);
-  if (!(size >= 0.001)) return 0;
-  return +size.toFixed(9);
+  if (o.cash !== null && o.cash !== undefined && isFinite(+o.cash)){ cashRoom = +o.cash - (o.infl || 0) - feeBuf; if (cashRoom < size){ size = cashRoom; by = "nakit (ücret payı düşülünce)"; } }
+  if (!(size >= 0.001)) return out(0, by + " → 0.001 SOL altı");
+  return out(+size.toFixed(9), by);
 }
 const feeBufNow = () => 0.004 + (isReal() ? 0.003 : 0);
-function riskSize(src, srcSol, walletSize){
+function riskSize(src, srcSol, walletSize){ return sizeWhy(src, srcSol, walletSize).size; }
+function sizeWhy(src, srcSol, walletSize){
   const free = simFree();
-  return sizeCalc({ cmpOn: !!(C.cmp && C.cmp.on), pct: C.cmp && C.cmp.pct, cmpMult: R.cmpMult || 1, equity: equity(),
+  return sizeExplain({ cmpOn: !!(C.cmp && C.cmp.on), pct: C.cmp && C.cmp.pct, cmpMult: R.cmpMult || 1, equity: equity(),
     base: C.base, maxTrade: C.maxTrade, budget: C.budget, deployed: deployed(), infl: inflSum(), cash: cashNow(), feeBuf: feeBufNow(),
     riskMult: free ? 1 : (R.mult || 1), free, src, srcSol, sizeMode: C.cp.sizeMode, ratio: C.cp.ratio, walletSize: walletSize || 0 });
 }
@@ -286,7 +294,7 @@ function onNew(t){ ST.seen++; if (!C.w.on) return; const learn = !ST.on && !!(C.
   const why = t.pool !== "pump" ? "havuz pump değil" : t.devSol < w.minInit ? "dev alımı düşük" : t.mcap && t.mcap < w.minMcap ? "mcap düşük" : t.devPct > w.maxDev ? "dev payı yüksek" : t.serial > 1 ? "seri yaratıcı" : t.copy > 0 ? "kopya isim" : null;
   if (why){ ST.wLast = `${t.symbol}: ${why}`; return; } if (ST.cands.size >= 6 || (!learn && !simFree() && posList().length >= C.maxPos)) return;
   ST.passed++; const c = { t, at: Date.now(), first: null, hi: 0, last: null, odd: false, learn };
-  const e = watchCurve(t.mint, t.curve); c.e = e; ST.cands.set(t.mint, c); PUMP.metaQ(t, true); FLOW.track(t.mint, t.curve, t.creator, t.at, t.mcap0);
+  const e = watchCurve(t.mint, t.curve); c.e = e; ST.cands.set(t.mint, c); PUMP.metaQ(t, true); FLOW.track(t.mint, t.curve, t.creator, t.at, t.mcap0); try { AGT() && AGT().onCand(t); } catch(e){}
   ST.wLast = `${t.symbol}: ${w.waitSec} sn akış izleniyor`; tl("watch", `👁 İZLEYİCİ: <b>${esc(t.symbol)}</b> ilk filtreyi geçti · mcap ${fmt(t.mcap, 1)} · dev %${fmt(t.devPct, 1)}`, "dim");
   c.iv = setInterval(() => { const cv = e.c; if (!cv) return; if (c.first === null){ c.first = cv.mcap; c.odd = Math.abs(cv.vSol - cv.rSol - 30) > 1.5; } c.last = cv.mcap; c.hi = Math.max(c.hi, cv.mcap); }, 250);
   if (isReal() && !learn) setTimeout(() => { const cv = e.c; if (ST.on && ST.cands.has(t.mint) && cv && cv.mcap >= (c.first || cv.mcap)) X().prebuild("buy:" + t.mint, { action: "buy", mint: t.mint, amount: riskSize("watcher"), denominatedInSol: "true", slip: C.slip, prio: C.prio, pool: "pump" }, cv.mcap); }, Math.max(1000, (w.waitSec - 4)*1000));
@@ -300,7 +308,11 @@ async function decide(mint, again){ const c = ST.cands.get(mint); if (!c) return
   const no = c.first === null ? "canlı curve verisi yok" : c.odd ? "standart dışı curve" : w.needSoc && !soc ? "sosyal yok" : t.risk > w.maxRisk ? `risk ${t.risk} > ${w.maxRisk}` : mom < w.minMom ? `momentum ${pc(mom)} < %${w.minMom}` : c.last > w.maxMcap ? `mcap ${fmt(c.last, 1)} > ${w.maxMcap}` : c.e.c && c.e.c.complete ? "curve tamamlandı" : c.last < c.hi*0.8 ? "zirveden %20+ düştü" : null;
   if (no){ ST.wLast = `${t.symbol}: elendi (${no})`; return done(`✖ ${esc(t.symbol)} elendi: ${esc(no)}`); }
   let fl = FLOW.flow(mint); if (C.sc && C.sc.on && fl && fl.src === "curve"){ await FLOW.backfill(mint); if (!ST.cands.has(mint)) return; fl = FLOW.flow(mint); } let sc = null;
-  if (C.sc && C.sc.on){ sc = SCORE.pumpScore(fl || { trades: [], mcaps: [] }, Date.now(), C.sc); ST.scN++; ST.scores.push(sc.score); if (ST.scores.length > 500) ST.scores.shift();
+  /* v7.6 agents: smart-money bonus, rug risk hard reject, optional entry-trigger gate (they only veto or boost — they never buy) */
+  const fl0 = fl || { trades: [], mcaps: [] }; let g = null; try { g = AGT() ? AGT().gate(t, c, fl0, SCORE.metrics(fl0, Date.now())) : null; } catch(e){ g = null; }
+  if (!(C.sc && C.sc.on) && g && g.reject){ ST.wLast = `${t.symbol}: ${g.reject}`; return done(`✖ ${esc(t.symbol)} elendi: <b>${esc(g.reject)}</b>`, "dim", "score"); }
+  if (C.sc && C.sc.on){ sc = SCORE.pumpScore(fl0, Date.now(), Object.assign({}, C.sc, { bonus: g ? g.bonus : 0 })); if (g){ if (g.reject && !sc.hard){ sc.hard = g.reject; sc.pass = false; } sc.why.push(...g.notes); sc.rug = g.rug; sc.entry = g.entry; }
+    try { AGT() && AGT().onScored(t, c, sc); } catch(e){} ST.scN++; ST.scores.push(sc.score); if (ST.scores.length > 500) ST.scores.shift();
     if (!sc.pass){ ST.wLast = `${t.symbol}: skor ${sc.score}${sc.hard ? " · " + sc.hard : ""}`; return done(`✖ ${esc(t.symbol)} ${scShort(sc)} → ${sc.hard ? "<b>" + esc(sc.hard) + "</b>" : `eşik ${sc.min} altı`}${c.learn ? " · öğrenme" : ""}`, "dim", "score"); }
     ST.scPass++; }
   if (c.learn || !ST.on){ const rec = wouldBuy(t, c, sc, mom); done(); return rec; }
@@ -464,9 +476,10 @@ function html(){ const real = isReal(), ex = X().C;
     <div class="mm-kpis" id="mm-kpis"></div>
     <div class="sub-h">AÇIK POZİSYONLAR <small id="mm-posn"></small></div><div id="mm-pos" class="pos-list"></div>
     <div class="sub-h">SON İŞLEMLER</div><div id="mm-tape" class="mm-tape"></div>
+    <div class="sub-h">AJANLAR <small>dokun → ayrıntı · emir yalnızca YÜRÜTÜCÜ'den, RİSK kontrolüyle</small></div>
+    <div class="ags compact" id="mm-ags">${AG("w", "👁", "İZLEYİCİ", "#00f0ff")}${(window.AGENTS ? AGENTS.CARDS : []).map(c => AG(...c)).join("")}${AG("r", "⛨", "RİSK", "#39ff14")}${AG("x", "⚡", "YÜRÜTÜCÜ", "#ffe600")}${AG("c", "🔁", "KOPYACI", "#ff2bd6")}</div>
     <details class="mm-adv keys" id="mm-adv"><summary>Gelişmiş</summary>
     <div class="mm-eqc"><div class="sub-h">HESAP EĞRİSİ <small>▲ alış · ▼ satış · ◆ risk</small></div><canvas id="mm-eqcv"></canvas></div>
-    <div class="sub-h">AJANLAR</div><div class="ags">${AG("w", "👁", "İZLEYİCİ", "#00f0ff")}${AG("c", "🔁", "KOPYACI", "#ff2bd6")}${AG("x", "⚡", "YÜRÜTÜCÜ", "#ffe600")}${AG("r", "⛨", "RİSK", "#39ff14")}</div>
     <div class="sub-h">BU GECE <small>zaman çizelgesi</small></div><div id="mm-tl" class="mm-tl"></div>
     <div class="sub-h">ÖNCE HESABI KORU, SONRA BÜYÜT</div><div class="ladder" id="mm-lad"></div>
     <div class="rules">${chk("rules.half", "Kayıptan sonra boyutu yarıya indir")}${chk("rules.pause2", "2 kayıp üst üste → ara ver")}${chk("rules.upHigh", "Boyutu yalnızca yeni hesap zirvesinde büyüt")}${inp("rules.pauseMin", "Ara süresi (dk)")}</div>
@@ -496,6 +509,7 @@ function html(){ const real = isReal(), ex = X().C;
       <div class="f3">${inp("sc.min", "Skor eşiği 0–100")}${inp("sc.minBuyers", "Min alıcı (dev hariç)")}${inp("sc.maxTop", "Tek cüzdan ≤ % alım")}</div>
       <div class="plan-foot">Bekleme süresi boyunca tokenın tüm işlemleri okunur (Solana RPC logsSubscribe, anahtarsız). Ağırlıklar: alıcı sayısı ${SCORE.W.buyers} · alım/satım sayısı ${SCORE.W.ratio} · net SOL girişi ${SCORE.W.inflow} · dağılım (en büyük cüzdan payı) ${SCORE.W.conc} · hız (mcap eğimi) ${SCORE.W.vel} · zirveden düşüş ${SCORE.W.dd} · temizlik (paket/sniper, aynı boyut) ${SCORE.W.clean} = 100. Hemen elenir: dev sattı · alıcı < min · tek cüzdan > eşik · ilk 2 sn'de ≥4 cüzdan alımların yarısından fazlası (paket/sniper) · aynı SOL boyutunda tekrarlı alım · zirveden %25+ düşüş · net giriş yok · cüzdan verisi okunamadı (yalnızca curve). Eski filtreler ön filtre olarak kalır. Skor bir olasılık göstergesidir, kâr garantisi değildir.</div>
       <div id="mm-sc-st" class="mm-scst"></div></details>
+    ${window.AGENTS ? AGENTS.settingsHTML() : ""}
     <details class="keys"><summary>👁 İZLEYİCİ filtreleri</summary>${chk("w.on", "İzleyici açık (yeni token girişleri)")}
       <div class="f3">${inp("w.minInit", "Min dev alımı SOL")}${inp("w.minMcap", "Min mcap SOL")}${inp("w.maxMcap", "Max mcap SOL")}</div>
       <div class="f3">${inp("w.maxDev", "Dev payı ≤ %")}${inp("w.maxRisk", "Rug riski ≤")}${inp("w.waitSec", "Bekle sn")}</div>
@@ -547,6 +561,7 @@ function bind(){ const box = $("#meme-box");
   const tog = $("#mm-goal-tog"), ed = $("#mm-goal-ed");
   if (tog && ed) tog.onclick = () => { const on = ed.classList.toggle("hidden"); tog.setAttribute("aria-expanded", on ? "false" : "true"); tog.textContent = on ? "düzenle" : "gizle"; };
   const rst = $("#mm-goal-reset"); if (rst) rst.onclick = () => { goalRestart(); NOTIFY.toast("24s pencere baştan alındı", "good"); };
+  if (window.AGENTS) AGENTS.bind();
   const adv = $("#mm-adv"); if (adv) adv.addEventListener("toggle", () => { if (adv.open) requestAnimationFrame(() => { drawEq(); paint(true); }); });
   paint(true); }
 function render(){ const box = $("#meme-box"); if (!box) return; if (RMT()){ orbRaf && cancelAnimationFrame(orbRaf); orbRaf = 0; return REMOTE.render(); } box.innerHTML = html(); bind(); orbInit(); }
@@ -563,7 +578,7 @@ function paint(full){ if (document.hidden) return; if (!$("#mm-eq")) return; con
   const arm = $("#mm-arm"); arm.textContent = ST.on ? "■ OTO DURDUR" : "▶ OTO BAŞLAT"; arm.classList.toggle("on", ST.on);
   const J = JOURNAL.list().filter(x => x.venue === "pump.fun" && x.wallet === walletTag() && typeof x.pnl === "number"), w = J.filter(x => x.pnl > 0).length, tp = todayPnl();
   $("#mm-kpis").innerHTML = `<div><small>BUGÜN</small><b class="${tp >= 0 ? "up" : "dn"}">${sg(tp, 4)}</b></div><div><small>İŞLEM</small><b>${J.length}</b></div><div><small>KAZANMA</small><b>${J.length ? Math.round(w/J.length*100) + "%" : "—"}</b></div><div><small>AÇIK</small><b>${posList().length}/${C.maxPos}</b></div>`;
-  paintPos(); paintAgents(); paintLadder(); paintLat(); drawEq(); if (full || Date.now() - lastFull > 5000){ lastFull = Date.now(); paintTL(); paintTape(); paintWallets(); paintScore(); } }
+  paintPos(); paintAgents(); if (window.AGENTS && (full || Date.now() - (ST.agAt || 0) > 1800)){ ST.agAt = Date.now(); try { AGENTS.paint(); } catch(e){ console.error(e); } } paintLadder(); paintLat(); drawEq(); if (full || Date.now() - lastFull > 5000){ lastFull = Date.now(); paintTL(); paintTape(); paintWallets(); paintScore(); } }
 function scStats(){ const b = [0, 0, 0, 0, 0]; for (const x of ST.scores) b[Math.min(4, Math.floor(x/20))]++; const D = WB.filter(r => r.done && !r.skip && isFinite(r.p5)), avg = k => D.length ? D.reduce((a, r) => a + r[k], 0)/D.length : null;
   return { n: ST.scN, pass: ST.scPass, buckets: b, wb: WB.length, wbDone: D.length, avgHi: avg("pHi"), avg5: avg("p5"), hit40: D.filter(r => r.pHi >= 40).length, flow: FLOW.stat }; }
 function paintScore(){ const el = $("#mm-sc-st"); if (!el) return; const s = scStats(), R_ = (k, v, c) => `<div><span>${k}</span><b class="${c || ""}">${v}</b></div>`;
@@ -693,6 +708,6 @@ for (const p of posList()) monitor(p.mint);
 if (isReal()){ realBal(true); X().keepWarm(true); }
 if (C.autoStart){ if (!isReal()) setTimeout(() => arm(true).then(ok => ok && NOTIFY.toast("otomatik başlat: OTO açıldı (SIM)", "good")), 1500);
   else { const iv = setInterval(() => { if (ST.on || !C.autoStart || C.mode !== "GERÇEK"){ clearInterval(iv); return; } if (W().unlocked()){ clearInterval(iv); arm(true).then(ok => ok && NOTIFY.ping("bad", "otomatik başlat: GERÇEK OTO açıldı")); } }, 2000); } }
-return { FLOW, scStats, get WB(){ return WB; }, check, exit, xcfg, snap, ctl, get remote(){ return RMT(); }, get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, endPause, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList, sizeCalc, riskSize, riskCheck, riskOnClose, simFree, simPreset10k, fxWin, fxBuy, fxLoss, goalRestart };
+return { sizeWhy, sizeExplain, FLOW, scStats, get WB(){ return WB; }, check, exit, xcfg, snap, ctl, get remote(){ return RMT(); }, get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, endPause, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList, sizeCalc, riskSize, riskCheck, riskOnClose, simFree, simPreset10k, fxWin, fxBuy, fxLoss, goalRestart };
 })();
 window.MEME = MEME;
