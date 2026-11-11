@@ -104,3 +104,59 @@ body.meme-on #nav button[data-go="meme"]::after{content:" ●";color:#ff2bd6}
 .rm-hero{height:150px}.rm-err{max-height:140px}
 .sv-kv{display:flex;flex-direction:column;gap:5px;font-size:12px;margin:4px 0 10px}.sv-kv>div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-bottom:1px dashed #12324a;padding-bottom:3px}
 .sv-kv span{color:var(--dim);white-space:nowrap}.sv-kv b{font-family:var(--tech);font-weight:400;color:#e7fdff;text-align:right;overflow-wrap:anywhere}
+
+/* v7.4 — goal bar, bumbum effects, simplified MEME layout */
+.mm-adv-ext{margin:8px 14px 0;border:1px dashed #1d4256;border-radius:14px;padding:6px 10px 8px;background:rgba(2,6,12,.45)}
+.mm-adv-ext>summary{cursor:pointer;font-family:var(--disp);font-size:11px;letter-spacing:1px;color:#8fc7d6;padding:8px 2px;list-style:none}
+.mm-adv-ext>summary::-webkit-details-marker{display:none}
+.mm-adv-ext>summary::before{content:"▸ ";color:#00f0ff}
+.mm-adv-ext[open]>summary::before{content:"▾ "}
+.mm-adv-ext[open]{padding-bottom:10px}
+.mm-adv-ext>.panel{margin:8px 0 0}
+/* Chrome can still lay out section/canvas descendants when <details> is closed; force-hide. */
+.mm-adv-ext:not([open])>:not(summary),
+.mm-adv:not([open])>:not(summary){display:none!important}
+.mm-adv-ext:not([open])::details-content,
+.mm-adv:not([open])::details-content{display:none!important}
+#adv-bus{margin-top:8px}
+body:not([data-pg="meme"]) #adv-bus{margin:0;padding:0;border:0;background:transparent;border-radius:0}
+body:not([data-pg="meme"]) #adv-bus>summary{display:none}
+.mm-adv.keys{margin-top:12px;border:1px dashed #1d4256;border-radius:14px;padding:8px 10px;background:rgba(2,6,12,.4)}
+.mm-adv>summary{cursor:pointer;font-family:var(--disp);font-size:12px;letter-spacing:1px;color:#b9f7ff;padding:8px 2px;list-style:none}
+.mm-adv>summary::-webkit-details-marker{display:none}
+.mm-adv>summary::before{content:"▸ ";color:#39ff14}
+.mm-adv[open]>summary::before{content:"▾ "}
+.mm-cmp-pill{color:#ffe600;border-color:#ffe600;text-shadow:0 0 8px #ffe60088}
+
+/* goal bar */
+.mm-goal{margin:0 0 10px;padding:10px 12px 8px;border-radius:16px;border:1px solid #1d5a70;background:radial-gradient(120% 80% at 0% 0%,rgba(0,240,255,.1),transparent 55%),radial-gradient(100% 80% at 100% 100%,rgba(57,255,20,.08),transparent 50%),rgba(2,6,12,.88);box-shadow:0 0 22px rgba(0,240,255,.12)}
+.mm-goal-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.mm-goal-lab{font-family:var(--disp);font-size:9px;letter-spacing:1.4px;color:#8fc7d6;text-transform:uppercase}
+.mm-goal-h b{margin-left:auto;font-family:var(--tech);font-weight:400;font-size:11px;color:#ffe600}
+.mm-goal-bar{height:12px;border-radius:8px;background:#0b1d28;border:1px solid #163548;overflow:hidden;position:relative}
+.mm-goal-fill{height:100%;width:0;border-radius:8px;background:linear-gradient(90deg,#00f0ff,#39ff14 55%,#ffe600);background-size:200% 100%;box-shadow:0 0 14px #39ff14aa,0 0 22px #00f0ff66;transition:width .8s cubic-bezier(.2,.8,.2,1);animation:mmGoalGlow 2.8s linear infinite}
+.mm-goal-fill.hot{box-shadow:0 0 18px #39ff14,0 0 28px #00f0ff}
+@keyframes mmGoalGlow{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.mm-goal-m{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:5px;font-family:var(--tech);font-size:12px;color:#e8fbff}
+.mm-goal-m #mm-goal-pct{color:#9fe9ff}
+.mm-goal-t{font-size:10px;color:var(--dim);margin-top:3px}
+.mm-goal-ed{margin-top:8px}
+.mm-goal-ed.hidden{display:none}
+
+/* effects */
+#mm-fx{position:fixed;inset:0;pointer-events:none;z-index:200;overflow:hidden}
+.mm-dot{position:absolute;width:7px;height:7px;border-radius:50%;left:var(--x);top:var(--y);background:var(--c);box-shadow:0 0 8px var(--c);animation:mmBurst .85s ease-out forwards;will-change:transform,opacity}
+@keyframes mmBurst{to{transform:translate(var(--dx),var(--dy)) scale(.2);opacity:0}}
+.mm-pop{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font-family:var(--disp);font-weight:900;font-size:28px;letter-spacing:1px;color:#39ff14;text-shadow:0 0 18px #39ff14,0 0 4px #fff;animation:mmPop .95s ease-out forwards;white-space:nowrap}
+@keyframes mmPop{0%{transform:translate(-50%,-50%) scale(.4);opacity:0}22%{transform:translate(-50%,-62%) scale(1.12);opacity:1}100%{transform:translate(-50%,-110%) scale(1);opacity:0}}
+@keyframes mmShake{0%,100%{transform:translateZ(0)}25%{transform:translate(-3px,2px)}50%{transform:translate(3px,-2px)}75%{transform:translate(-2px,1px)}}
+body.mm-shake{animation:mmShake .45s ease-in-out}
+@keyframes mmPulse{50%{filter:brightness(1.18)} }
+body.mm-pulse .mm-hero,body.mm-pulse #meme{animation:mmPulse .35s ease}
+body.mm-flash-loss::after{content:"";position:fixed;inset:0;background:rgba(255,51,85,.2);pointer-events:none;z-index:199;animation:mmFlash .4s ease-out forwards}
+@keyframes mmFlash{0%{opacity:1}100%{opacity:0}}
+
+@media (prefers-reduced-motion: reduce){
+  .mm-goal-fill,.mm-dot,.mm-pop,body.mm-shake,body.mm-pulse .mm-hero,body.mm-pulse #meme,body.mm-flash-loss::after{animation:none!important;transition:none!important}
+  .mm-pop{opacity:1;transform:translate(-50%,-50%)}
+}

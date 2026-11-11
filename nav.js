@@ -3,6 +3,7 @@
 const NAV = (() => {
 const PG = { meme: "meme", grok: "grok", fut: "vadeli", wal: "cuzdan" }, BY = Object.fromEntries(Object.entries(PG).map(([k, v]) => [v, k]));
 function go(p, push = true){ if (!PG[p]) p = "meme"; document.body.dataset.pg = p; document.querySelectorAll("#nav button").forEach(b => { b.classList.toggle("on", b.dataset.go === p); b.setAttribute("aria-selected", b.dataset.go === p); });
+  document.querySelectorAll(".mm-adv-ext").forEach(d => { if (d.id === "adv-bus") d.open = p !== "meme"; });
   if (push) history.replaceState(null, "", location.pathname + location.search + "#" + PG[p]);
   requestAnimationFrame(() => { window.dispatchEvent(new Event("resize")); if (p === "meme" && window.MEME) MEME.paint(true); if (p === "grok"){ const m = document.getElementById("gk-msgs"); if (m) m.scrollTop = m.scrollHeight; } });
   window.scrollTo({ top: 0 }); }
