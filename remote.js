@@ -1,4 +1,4 @@
-/* NEON//TERMINAL v7 — SUNUCU (remote control). The MEME bot can run 24/7 on an always-on machine (server/server.mjs: the same engine in headless Chrome).
+/* NEON//TERMINAL v7.2 — SUNUCU (remote control). The MEME bot can run 24/7 on an always-on machine (server/server.mjs: the same engine in headless Chrome).
    Pair once (server URL + token, or a pairing link …/#pair=<url>|<token>); both are kept only in this device's localStorage.
    While paired, the local MEME engine never trades: the MEME screen mirrors the server bot and every button controls it.
    The bot wallet travels only as the PIN-encrypted record; the PIN goes only over the authenticated HTTPS tunnel and is kept in server memory only. */
@@ -34,7 +34,10 @@ async function api(path, body, to = 20000){ if (!P) throw new Error("eşli sunuc
 const u8 = s => new TextEncoder().encode(s), hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
 const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
 let discAt = 0;
-async function discover(force){ if (!P || !crypto.subtle || (!force && Date.now() - discAt < 30000)) return false; discAt = Date.now();
+async function discover(force){ if (!P || !crypto.subtle) return false;
+  /* when the poll is already failing, retry ntfy every 5 s; while connected, at most every 20 s so a newly published URL is picked up without a button press */
+  const cool = (force || S.conn === "err" || S.conn === "conn") ? 5000 : 20000;
+  if (!force && Date.now() - discAt < cool) return false; discAt = Date.now();
   try { const topic = "neon" + hex(await crypto.subtle.digest("SHA-256", u8("neon-topic:" + P.token))).slice(0, 40);
     const key = await crypto.subtle.importKey("raw", await crypto.subtle.digest("SHA-256", u8("neon-url:" + P.token)), "AES-GCM", false, ["decrypt"]);
     const txt = await (await fetch(`https://ntfy.sh/${topic}/json?poll=1&since=24h`, { cache: "no-store" })).text();
@@ -57,11 +60,17 @@ async function stream(gen){ /* fetch-streamed SSE (lets us send the token in a h
   finally { clearTimeout(wd); }
   return got; }
 async function loop(gen){ while (P && gen === S.gen){
-    let streamed = false; if (S.noStream !== P.url){ try { streamed = await stream(gen); } catch(e){ S.conn = "err"; S.err = e.message; paint(); return; } if (!streamed && S.at) S.noStream = P.url; /* tunnel buffers streams → just poll */ }
-    if (!streamed && (!S.at || Date.now() - S.at > 12000) && await discover()) return;
+    let streamed = false; if (S.noStream !== P.url){ try { streamed = await stream(gen); } catch(e){ S.conn = "err"; S.err = e.message; paint(); if (await discover(true)) return; } if (!streamed && S.at) S.noStream = P.url; /* tunnel buffers streams → just poll */ }
+    if (!streamed && (!S.at || Date.now() - S.at > 4000) && await discover()) return;
     if (gen !== S.gen) return;
     if (!streamed){ /* polling fallback for ~30 s, then try the stream again */ S.mode = "yoklama";
-      for (let i = 0; i < (S.noStream === P.url ? 1e9 : 20) && P && gen === S.gen; i++){ try { onData(await api("/api/status", undefined, 8000)); } catch(e){ S.conn = Date.now() - S.at > 15000 ? "err" : S.conn; S.err = e.message; paint(); if (/token/.test(e.message)) return; if (S.conn === "err" && await discover()) return; await new Promise(r => setTimeout(r, Math.min(15000, 2000 + S.retry++*1500))); continue; } await new Promise(r => setTimeout(r, 1500)); } }
+      for (let i = 0; i < (S.noStream === P.url ? 1e9 : 20) && P && gen === S.gen; i++){
+        try { onData(await api("/api/status", undefined, 8000)); if (i && i % 10 === 0) await discover(); }
+        catch(e){ S.conn = Date.now() - S.at > 6000 ? "err" : S.conn; S.err = e.message; paint();
+          /* never stop the loop: a stale URL can look like a 401, and the new address is on ntfy */
+          if (await discover(true)) return;
+          await new Promise(r => setTimeout(r, Math.min(6000, 800 + S.retry++*800))); continue; }
+        await new Promise(r => setTimeout(r, 1500)); } }
     else await new Promise(r => setTimeout(r, 500)); } }
 function connect(){ disconnect(); if (!P) return; S.conn = "conn"; const gen = ++S.gen; loop(gen); clearInterval(S.ctxT); S.ctxT = setInterval(() => { if (S.conn === "ok" && document.body.dataset.pg === "grok") refreshCtx(); }, 15000); refreshCtx(); }
 function disconnect(){ S.gen++; if (S.ab) try { S.ab.abort(); } catch(e){} S.ab = null; clearInterval(S.ctxT); S.conn = "off"; }
@@ -126,7 +135,8 @@ function srvBind(){ const b = (id, f) => { const e = $(id); if (e) e.onclick = f
   b("#sv-up", walletUpload); b("#sv-unl", walletUnlock); b("#sv-del", walletRemove); b("#sv-lock", () => cmd("/api/wallet/lock", {}, "sunucuda kilitli")); }
 function paintSrv(){ const st = $("#sv-st"); if (!st) return; const s = S.snap, v = S.srv || {}; const fresh = S.at && Date.now() - S.at < 10000;
   st.className = "sv-st " + (fresh ? "ok" : S.conn === "conn" && !S.at ? "wait" : "bad");
-  st.innerHTML = fresh ? `● BAĞLI · ${esc(S.mode)} · son güncelleme <b>${tm(S.at)}</b> <small>(${ago(S.at)})</small>` : S.conn === "conn" && !S.at ? "○ bağlanıyor…" : `✖ BAĞLANTI YOK${S.at ? ` · son veri ${tm(S.at)} (${ago(S.at)})` : ""}<small>${esc(S.err || "")}</small><small>Sunucu yeniden başladıysa adres değişmiş olabilir — yeni eşleşme linkini aç.</small>`;
+  const hunting = !fresh && (S.conn === "err" || S.conn === "conn" || /adresi/.test(S.err || ""));
+  st.innerHTML = fresh ? `● BAĞLI · ${esc(S.mode)} · son güncelleme <b>${tm(S.at)}</b> <small>(${ago(S.at)})</small>` : S.conn === "conn" && !S.at ? "○ bağlanıyor…" : hunting ? `○ yeni adres aranıyor…${S.at ? ` · son veri ${tm(S.at)} (${ago(S.at)})` : ""}<small>${esc(S.err || "sunucu adresi yenilenmiş olabilir — otomatik bulunuyor")}</small>` : `✖ BAĞLANTI YOK${S.at ? ` · son veri ${tm(S.at)} (${ago(S.at)})` : ""}<small>${esc(S.err || "")}</small><small>Birkaç saniye içinde kendiliğinden bağlanır. Olmazsa ↻ YENİDEN BAĞLAN'a bas.</small>`;
   const kv = $("#sv-kv"); if (kv) kv.innerHTML = `<div><span>adres</span><b>${esc(P.url.replace(/^https:\/\//, ""))}</b></div><div><span>sunucu çalışma süresi</span><b>${up(v.uptime)}</b></div><div><span>bot sayfası</span><b>${v.page ? esc(v.page) : "—"}${v.reloads ? " · " + v.reloads + " yeniden yükleme" : ""}</b></div><div><span>yerel motor</span><b class="up">BOŞTA (işlem yapmaz)</b></div>`;
   const w = $("#sv-w"); if (w){ const loc = window.WALLET && WALLET.blob && WALLET.blob(); w.innerHTML = `<div class="sv-kv"><div><span>sunucudaki cüzdan</span><b>${s && s.wallet.exists ? esc(short(s.wallet.pub)) + (s.wallet.unlocked ? ' <span class="up">🔓 açık</span>' : ' <span class="y">🔒 kilitli</span>') : "yok"}</b></div><div><span>bakiye</span><b>${s && s.wallet.bal !== null ? fmt(s.wallet.bal, 4) + " SOL" : "—"}</b></div><div><span>bu telefondaki cüzdan</span><b>${loc ? esc(short(loc.pub)) + (s && s.wallet.pub === loc.pub ? ' <span class="up">= sunucu</span>' : "") : "yok"}</b></div></div>`; } }
 /* ---------------- UI: mirrored MEME screen ---------------- */
@@ -220,7 +230,8 @@ function full(){ const sb = $("#srv-box"); if (sb){ sb.innerHTML = srvHTML(); sr
   if (P) render(); else if (window.MEME) MEME.render(); paint(); }
 function paint(){ paintSrv(); if (P && S.rendered) paintMirror(); const on = !!(P && S.snap && S.snap.on); document.body.classList.toggle("meme-on", on || !!(window.MEME && MEME.on)); if (window.MEME && MEME.fab) MEME.fab(); }
 setInterval(() => { if (!document.hidden && P) paintSrv(); if (!document.hidden && P && S.rendered && Date.now() - S.at > 10000) paintMirror(); }, 1000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && P && Date.now() - S.at > 5000){ S.retry = 0; connect(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && P && Date.now() - S.at > 5000){ S.retry = 0; discover(true).then(ok => { if (!ok && S.gen) connect(); }); } });
+window.addEventListener("online", () => { if (P){ S.retry = 0; discover(true).then(ok => { if (!ok) connect(); }); } });
 const init = () => { full(); if (P) connect(); };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 return { paired: () => !!P, on: () => !!(P && S.snap && S.snap.on), ctx: () => (P && S.ctx) || null, apply, kill, render, pair, unpair, parsePair, get S(){ return S; }, get P(){ return P ? { url: P.url } : null; } };
