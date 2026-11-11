@@ -1,8 +1,11 @@
-/* NEON//TERMINAL v7.4 — MEME platform: fully automatic pump.fun trading with four agents.
+/* NEON//TERMINAL v7.5 — MEME platform: fully automatic pump.fun trading with four agents.
    WATCHER (new tokens + filters) · COPIER (mirror tracked wallets) · EXECUTOR (exec.js) · RISK (protect the account first, grow it second).
    Modes: SIM (default · paper money, real live market data, realistic fills/fees/latency, nothing sent) and GERÇEK (BOT CÜZDANI, real SOL).
    Auto is OFF after every page load unless "otomatik başlat" is on. Manual trades always need ONAYLA; Grok can only suggest.
-   v7.4: optional compounding (entry = equity × %), animated USD goal bar, win/loss effects, simplified MEME layout. */
+   v7.4: optional compounding (entry = equity × %), animated USD goal bar, win/loss effects, simplified MEME layout.
+   v7.5: "pump skoru" from each candidate's own trade flow (keyless Solana RPC logsSubscribe → pump.fun TradeEvents) with hard rejects,
+         "alırdı" learning log while OTO is off, dynamic exits (early stop, breakeven, partial take-profit, tightening trail, flow reversal,
+         dev/top-holder dump, flat time stop) and a SIM fill haircut on fast moves. Risk limits (maxTrade, budget, dailyLoss, maxPos, pauses) unchanged. */
 "use strict";
 const MEME = (() => {
 const $ = s => document.querySelector(s), esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -14,8 +17,10 @@ const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin", 
 const ms = x => x === null || x === undefined || !isFinite(x) ? "—" : x >= 1000 ? (x/1000).toFixed(2) + " sn" : Math.round(x) + " ms";
 const T = () => window.TRADE, W = () => window.WALLET, X = () => window.EXEC;
 const K = "neon.meme";
-const DEF = { mode: "SIM", dep: 1, autoStart: false, base: 0.05, maxTrade: 0.1, budget: 0.5, dailyLoss: 0.25, maxPos: 3, tp: 50, sl: 25, trail: 15, holdMin: 15, slip: 20, prio: 0.0005,
-  w: { on: true, minInit: 0.15, minMcap: 15, maxMcap: 120, needSoc: true, maxDev: 16, maxRisk: 58, waitSec: 15, minMom: 3 },
+const DEF = { mode: "SIM", dep: 1, autoStart: false, base: 0.05, maxTrade: 0.1, budget: 0.5, dailyLoss: 0.25, maxPos: 3, tp: 250, sl: 25, trail: 20, holdMin: 15, slip: 20, prio: 0.0005,
+  w: { on: true, minInit: 0.15, minMcap: 15, maxMcap: 120, needSoc: true, maxDev: 16, maxRisk: 58, waitSec: 20, minMom: 3 },
+  sc: { on: true, min: 65, minBuyers: 5, maxTop: 45, learn: true },
+  x: { on: true, early: 12, earlySec: 20, momUp: 5, momFail: 8, be: 20, beLock: 1, ptp: 40, ptpPct: 50, trailHi: 12, trailSw: 100, rev: true, revSec: 6, flatMin: 4, flatBand: 10, simHc: true },
   cp: { on: true, minSrc: 0.3, maxMcap: 300, follow: true, cool: 120, max10: 3, sizeMode: "fixed", ratio: 0.1 },
   rules: { half: true, pause2: true, pauseMin: 60, upHigh: true },
   gk: { gate: false, timeout: 2500, fallback: "rules" },
@@ -28,11 +33,16 @@ let C = deep(DEF, (() => { try { return JSON.parse(localStorage.getItem(K) || "{
 const save = () => localStorage.setItem(K, JSON.stringify(C));
 /* v7.3: one-time move to the looser watcher filters (risk limits untouched) */
 if ((C.fv|0) < 2){ Object.assign(C.w, { minInit: 0.15, minMcap: 15, maxMcap: 120, maxDev: 16, maxRisk: 58, waitSec: 15, minMom: 3 }); C.fv = 2; try { save(); } catch(e){} }
+/* v7.5: one-time move to the new exit + score defaults (risk limits — base, maxTrade, budget, dailyLoss, maxPos, rules — untouched) */
+if ((C.fv|0) < 3){ C.tp = DEF.tp; C.trail = DEF.trail; C.w.waitSec = DEF.w.waitSec; C.x = Object.assign({}, DEF.x); C.sc = Object.assign({}, DEF.sc); C.fv = 3; try { save(); } catch(e){} }
 const RANGE = { base: [0.001, 1], maxTrade: [0.001, 2], budget: [0.01, 20], dailyLoss: [0.005, 20], maxPos: [1, 10], tp: [5, 1000], sl: [3, 90], trail: [0, 80], holdMin: [1, 1440], slip: [1, 50], prio: [0, 0.005], dep: [0.01, 10000],
   "w.minInit": [0, 50], "w.minMcap": [0, 1000], "w.maxMcap": [1, 5000], "w.maxDev": [0, 100], "w.maxRisk": [0, 100], "w.waitSec": [3, 600], "w.minMom": [-50, 500],
   "cp.minSrc": [0, 100], "cp.maxMcap": [1, 10000], "cp.cool": [0, 3600], "cp.max10": [1, 50], "cp.ratio": [0.001, 10], "rules.pauseMin": [1, 1440], "gk.timeout": [500, 15000],
-  "cmp.pct": [1, 25], "cmp.winX": [1, 2], "goal.targetUsd": [1, 1000000], "goal.startUsd": [0.01, 1000000] };
-const BOOL = new Set(["w.on", "w.needSoc", "cp.on", "cp.follow", "rules.half", "rules.pause2", "rules.upHigh", "gk.gate", "cmp.on", "fx.sound", "freeSim"]);
+  "cmp.pct": [1, 25], "cmp.winX": [1, 2], "goal.targetUsd": [1, 1000000], "goal.startUsd": [0.01, 1000000],
+  "sc.min": [0, 100], "sc.minBuyers": [0, 500], "sc.maxTop": [1, 100],
+  "x.early": [0, 90], "x.earlySec": [0, 600], "x.momUp": [0, 100], "x.momFail": [0, 90], "x.be": [0, 500], "x.beLock": [-20, 50], "x.ptp": [0, 1000], "x.ptpPct": [0, 90],
+  "x.trailHi": [0, 80], "x.trailSw": [10, 2000], "x.revSec": [2, 120], "x.flatMin": [0, 1440], "x.flatBand": [-50, 500] };
+const BOOL = new Set(["w.on", "w.needSoc", "cp.on", "cp.follow", "rules.half", "rules.pause2", "rules.upHigh", "gk.gate", "cmp.on", "fx.sound", "freeSim", "sc.on", "sc.learn", "x.on", "x.rev", "x.simHc"]);
 const getP = p => p.split(".").reduce((o, k) => o && o[k], C);
 function setP(p, v){ if (BOOL.has(p)) v = v === true || v === "true" || v === 1; else if (p === "cp.sizeMode") { if (!["fixed", "ratio"].includes(v)) throw new Error("sizeMode fixed|ratio"); } else if (p === "gk.fallback") { if (!["rules", "deny"].includes(v)) throw new Error("fallback rules|deny"); }
   else { const r = RANGE[p]; if (!r) throw new Error("bilinmeyen ayar: " + p); v = +String(v).replace(",", "."); if (!(v >= r[0] && v <= r[1])) throw new Error(`${p} ${r[0]}–${r[1]} olmalı`); }
@@ -60,7 +70,7 @@ const TLK = "neon.meme.tl"; let TL = (() => { try { return JSON.parse(localStora
 function tl(kind, html, cls, extra){ TL.unshift(Object.assign({ t: Date.now(), k: kind, h: html, c: cls || "", m: C.mode }, extra || {})); if (TL.length > 250) TL.length = 250; localStorage.setItem(TLK, JSON.stringify(TL)); paintTLQ(); }
 const TAPE = []; function tape(x){ TAPE.unshift(Object.assign({ t: Date.now() }, x)); if (TAPE.length > 60) TAPE.length = 60; paintTapeQ(); }
 /* ------------------------- runtime state ------------------------- */
-const ST = { on: false, wake: null, cands: new Map(), mons: new Map(), busy: new Set(), buying: 0, curves: new Map(), cpLog: new Map(), lastCopy: null, seen: 0, passed: 0, entered: 0, wLast: "", gk: { n: 0, yes: 0, no: 0, to: 0, last: null }, real: { bal: null, at: 0 }, orb: 0 };
+const ST = { scN: 0, scPass: 0, scores: [], wb: 0, wbLive: 0, on: false, wake: null, cands: new Map(), mons: new Map(), busy: new Set(), buying: 0, curves: new Map(), cpLog: new Map(), lastCopy: null, seen: 0, passed: 0, entered: 0, wLast: "", gk: { n: 0, yes: 0, no: 0, to: 0, last: null }, real: { bal: null, at: 0 }, orb: 0 };
 const isReal = () => C.mode === "GERÇEK";
 /* Serbest mod only ever fires in SIM. GERÇEK ignores C.freeSim no matter what. */
 const simFree = () => !isReal() && !!C.freeSim;
@@ -89,6 +99,49 @@ function watchCurve(mint, key){ let e = ST.curves.get(mint); if (e){ e.refs++; r
   e.unsub = PUMP.curveSub(key, c => { e.c = c; e.at = Date.now(); }); PUMP.curveNow(key).then(c => { if (c && !e.c){ e.c = c; e.at = Date.now(); } }).catch(() => {}); ST.curves.set(mint, e); return e; }
 function unwatchCurve(mint){ const e = ST.curves.get(mint); if (!e) return; if (--e.refs <= 0){ e.unsub && e.unsub(); ST.curves.delete(mint); } }
 const curveOf = m => { const e = ST.curves.get(m); return e && e.c; };
+/* ------------------------- FLOW: per-token trade flow, keyless -------------------------
+   Checked 2026-11-11: PumpPortal subscribeTokenTrade needs a funded API key; Solana RPC logsSubscribe({ mentions: [mint] }) on publicnode
+   streams every pump.fun trade of that token (TradeEvent → wallet, SOL, buy/sell). Subscribes are paced ~650 ms (publicnode drops bursts).
+   Fallback when logs stay silent: buy/sell deltas from the bonding-curve account (no wallet → buyer count and concentration unknown). */
+const FLOW = (() => {
+  const S = { ws: null, open: false, id: 1, q: [], qT: null, last: 0, req: new Map(), reqAt: new Map(), bySub: new Map(), want: new Map(), retry: 0, notes: 0, trades: 0 };
+  const url = () => { const c = X().C.ws; return /^wss:\/\//.test(c || "") ? c : "wss://solana-rpc.publicnode.com"; };
+  const trim = a => { if (a.length > 3000) a.splice(0, a.length - 3000); };
+  function wsOpen(){ if (S.ws) return; let ws; try { ws = new WebSocket(url()); } catch(e){ return; } S.ws = ws;
+    ws.onopen = () => { S.open = true; S.retry = 0; for (const [m, e] of S.want) if (e.sub == null && !S.q.includes(m)) S.q.push(m); pumpQ(); };
+    ws.onmessage = ev => { let j; try { j = JSON.parse(ev.data); } catch(e){ return; }
+      if (j.id && S.req.has(j.id)){ const m = S.req.get(j.id); S.req.delete(j.id); S.reqAt.delete(j.id); const e = S.want.get(m); if (typeof j.result === "number"){ if (e){ e.sub = j.result; S.bySub.set(j.result, m); } else unsubId(j.result); } return; }
+      if (j.method !== "logsNotification") return; const m = S.bySub.get(j.params.subscription), e = m && S.want.get(m); if (!e) return; const v = j.params.result.value; if (!v || v.err) return; S.notes++;
+      if (e.sigs.has(v.signature)) return; e.sigs.add(v.signature); if (e.sigs.size > 4000) e.sigs.clear();
+      const me = isReal() && W().exists() ? W().pub() : null, now = Date.now();
+      for (const l of v.logs || []){ const t = COPY.decodeTrade(l); if (!t || t.mint !== m || (me && t.user === me)) continue; S.trades++; e.tr.push({ t: now, user: t.user, sol: t.sol, isBuy: t.isBuy, mcap: t.mcap }); trim(e.tr); } };
+    ws.onclose = () => { S.ws = null; S.open = false; S.bySub.clear(); S.req.clear(); S.reqAt.clear(); S.q = []; clearTimeout(S.qT); S.qT = null; for (const e of S.want.values()) e.sub = null; if (S.want.size) setTimeout(wsOpen, Math.min(15000, 1000*2**S.retry++)); };
+    ws.onerror = () => {}; }
+  function step(){ S.qT = null; const m = S.q.shift(); if (m === undefined) return; if (!S.open || !S.ws || S.ws.readyState !== 1){ S.q.unshift(m); return; }
+    const e = S.want.get(m); if (e && e.sub == null){ const id = S.id++; S.req.set(id, m); S.reqAt.set(id, Date.now()); S.ws.send(JSON.stringify({ jsonrpc: "2.0", id, method: "logsSubscribe", params: [{ mentions: [m] }, { commitment: "processed" }] })); S.last = Date.now(); } pumpQ(); }
+  function pumpQ(){ if (S.qT || !S.q.length) return; S.qT = setTimeout(step, Math.max(0, 650 - (Date.now() - S.last))); }
+  function unsubId(id){ if (S.open && S.ws && S.ws.readyState === 1) try { S.ws.send(JSON.stringify({ jsonrpc: "2.0", id: S.id++, method: "logsUnsubscribe", params: [id] })); } catch(e){} }
+  setInterval(() => { const cut = Date.now() - 8000; for (const [id, t] of S.reqAt) if (t < cut){ const m = S.req.get(id); S.reqAt.delete(id); S.req.delete(id); if (m && S.want.has(m) && S.want.get(m).sub == null && !S.q.includes(m)) S.q.push(m); } pumpQ(); if (S.want.size) wsOpen(); }, 4000);
+  function curveOn(e, key){ e.cunsub = PUMP.curveSub(key, c => { const now = Date.now(); e.mc.push([now, c.mcap]); trim(e.mc);
+    if (e.lastC){ const d = c.vSol - e.lastC.vSol; if (Math.abs(d) > 1e-6){ e.ctr.push({ t: now, user: null, sol: Math.abs(d), isBuy: d > 0, mcap: c.mcap }); trim(e.ctr); } } e.lastC = c; }); }
+  function track(mint, key, dev, t0, mcap0){ let e = S.want.get(mint); if (e){ e.refs++; return e; }
+    e = { refs: 1, sub: null, sigs: new Set(), tr: [], ctr: [], mc: [], dev: dev || null, t0: t0 || Date.now(), mcap0: mcap0 || null, lastC: null, cunsub: null, dead: false }; S.want.set(mint, e);
+    if (key) curveOn(e, key); else curveKey(mint).then(k => { if (!e.dead) curveOn(e, k); }).catch(() => {});
+    S.q.push(mint); wsOpen(); pumpQ(); return e; }
+  function untrack(mint){ const e = S.want.get(mint); if (!e || --e.refs > 0) return; e.dead = true; S.want.delete(mint); S.q = S.q.filter(x => x !== mint); if (e.sub != null){ S.bySub.delete(e.sub); unsubId(e.sub); } e.cunsub && e.cunsub(); }
+  /* HTTP backfill (publicnode's logs stream is sometimes silent for a token): latest signatures → getTransaction (4 at a time) → TradeEvents.
+     Used once per candidate at decision time when no wallet-level trade arrived; deduped by signature with the WS path. */
+  async function backfill(mint, ms = 5000){ const e = S.want.get(mint); if (!e) return 0; const end = Date.now() + ms, me = isReal() && W().exists() ? W().pub() : null; let n = 0;
+    try { const L = await T().ph.rpc("getSignaturesForAddress", [mint, { limit: 50, commitment: "confirmed" }]); const q = (L || []).filter(x => !x.err && !e.sigs.has(x.signature)).slice(0, 40);
+      for (let i = 0; i < q.length && Date.now() < end; i += 4) await Promise.all(q.slice(i, i + 4).map(async x => { try { const tx = await T().ph.rpc("getTransaction", [x.signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" }]);
+        if (!tx || !tx.meta || tx.meta.err || e.sigs.has(x.signature)) return; e.sigs.add(x.signature); const at = (tx.blockTime || x.blockTime || Date.now()/1000)*1000;
+        for (const l of tx.meta.logMessages || []){ const t = COPY.decodeTrade(l); if (!t || t.mint !== mint || (me && t.user === me)) continue; n++; S.trades++; e.tr.push({ t: at, user: t.user, sol: t.sol, isBuy: t.isBuy, mcap: t.mcap, bf: true }); } } catch(err){} }));
+      e.tr.sort((a, b) => a.t - b.t); } catch(err){} S.bf = (S.bf || 0) + 1; S.bfN = (S.bfN || 0) + n; return n; }
+  function flow(mint){ const e = S.want.get(mint); if (!e) return null; const logs = e.tr.length > 0; return { dev: e.dev, t0: e.t0, mcap0: e.mcap0, trades: logs ? e.tr : e.ctr, mcaps: e.mc, src: logs ? "logs" : "curve", subbed: e.sub != null }; }
+  return { track, untrack, flow, backfill, get stat(){ return { bf: S.bf || 0, bfN: S.bfN || 0, open: S.open, subs: [...S.want.values()].filter(e => e.sub != null).length, want: S.want.size, notes: S.notes, trades: S.trades }; } };
+})();
+const volOf = (mc, now, win) => { const L = (mc || []).filter(p => p[0] >= now - win).map(p => p[1]); if (L.length < 2) return 0; const lo = Math.min(...L), hi = Math.max(...L); return lo > 0 ? (hi - lo)/lo*100 : 0; };
+const simHcNow = mc => !isReal() && C.x && C.x.simHc ? SCORE.simHaircut(volOf(mc, Date.now(), 3000)) : 0;
 /* ------------------------- RISK agent ------------------------- */
 /* Pure size math (exported for tests). Caps never raise a limit; they only shrink the ticket.
    Compounding ON: raw = equity × (pct/100) × cmpMult; OFF: base (or copy-ratio / wallet size).
@@ -159,7 +212,7 @@ async function enter(o){ /* o: { mint, sym, src, wallet, srcSol, tEv, c0, curve,
       else { ST.gk.yes++; tl("grok", `GROK EVET: ${esc(o.sym)} — ${esc(g.why || "")} <small>${ms(g.ms)}</small>`, "up"); window.BUS && BUS.emit("grok"); } }
     const c0 = o.c0 || e.c || await PUMP.curveNow(key).catch(() => null);
     const auto = !o.manual; let r;
-    if (!isReal()){ r = await X().sim({ action: "buy", sol: size, slip: C.slip, prio: C.prio, sym: o.sym, mint: o.mint }, () => curveOf(o.mint), c0, o.tEv, { src: o.src, newAta: true });
+    if (!isReal()){ r = await X().sim({ action: "buy", sol: size, slip: C.slip, prio: C.prio, sym: o.sym, mint: o.mint }, () => curveOf(o.mint), c0, o.tEv, { src: o.src, newAta: true, hc: o.hc || 0 });
       SIM.cash += r.sol; SIM.n++; const jid = JOURNAL.add({ venue: "pump.fun", mode: auto ? "OTO" : "MANUEL", wallet: "SIM", src: o.src, w: o.wallet || null, sym: o.sym, mint: o.mint, side: "AL→SAT", in: +(-r.sol).toFixed(9), unit: "SOL", reason: o.reason || "", note: `giriş mcap ${fmt(c0 && c0.mcap, 1)} SOL · olay→gön. ${ms(r.m.ev2sent)} · gön.→dolum ${ms(r.m.sent2conf)}` });
       posAdd({ mint: o.mint, sym: o.sym, venue: "pump.fun", solIn: -r.sol, tokens: r.tokens, t: Date.now(), auto, src: o.src, wallet: o.wallet || null, curve: key, jid, entryMcap: c0 && c0.mcap }); }
     else { r = await X().real({ action: "buy", mint: o.mint, amount: size, denominatedInSol: "true", slip: C.slip, prio: C.prio, pool: "pump", sym: o.sym }, o.tEv, { src: o.src, preKey: "buy:" + o.mint, ref: c0 && c0.mcap });
@@ -175,56 +228,97 @@ async function enter(o){ /* o: { mint, sym, src, wallet, srcSol, tEv, c0, curve,
     monitor(o.mint); paint(); return r; }
   catch(e){ tl("err", `✖ ${esc(o.sym)} alım başarısız: ${esc(e.message)}`, "dn"); if (isReal()) NOTIFY.ping("bad", `alım başarısız: ${o.sym}`); return null; }
   finally { INFL.delete(o.mint); if (watched) unwatchCurve(o.mint); ST.busy.delete(o.mint); ST.buying--; } }
-async function exit(mint, why, tEv){ const p = posGet(mint); if (!p || ST.busy.has("s:" + mint)) return null; ST.busy.add("s:" + mint);
-  try { const e = ST.curves.get(mint) || watchCurve(mint, p.curve || await curveKey(mint)); const c0 = e.c || await PUMP.curveNow(e.key).catch(() => null); let out, r;
-    if (!isReal()){ if (!p.tokens) throw new Error("adet bilinmiyor"); r = await X().sim({ action: "sell", tokens: p.tokens, slip: C.slip, prio: C.prio, sym: p.sym, mint }, () => curveOf(mint), c0, tEv, { src: p.src });
+/* exit: frac < 1 = partial take-profit (sells that share of the tokens; the rest keeps running with its cost basis reduced in proportion).
+   GERÇEK partial uses the same executor path as a full sell, with PumpPortal amount "NN%" (no pre-built tx; that one is for 100 %). */
+async function exit(mint, why, tEv, frac){ const p = posGet(mint); if (!p || ST.busy.has("s:" + mint)) return null; ST.busy.add("s:" + mint);
+  const part = frac > 0 && frac < 1, f = part ? frac : 1, pctTxt = Math.round(f*100);
+  try { const e = ST.curves.get(mint) || watchCurve(mint, p.curve || await curveKey(mint)); const c0 = e.c || await PUMP.curveNow(e.key).catch(() => null); let out, r; const sellTok = p.tokens*f;
+    if (!isReal()){ if (!p.tokens) throw new Error("adet bilinmiyor"); const fl = FLOW.flow(mint);
+      r = await X().sim({ action: "sell", tokens: sellTok, slip: C.slip, prio: C.prio, sym: p.sym, mint }, () => curveOf(mint), c0, tEv, { src: p.src, hc: simHcNow(fl && fl.mcaps) });
       out = r.sol; SIM.cash += out; simSave(); }
-    else { if (!W().unlocked()) throw new Error("BOT CÜZDANI kilitli"); r = await X().real({ action: "sell", mint, amount: "100%", denominatedInSol: "false", slip: C.slip, prio: C.prio, pool: "auto", sym: p.sym }, tEv, { src: p.src, preKey: "sell:" + mint, ref: c0 && c0.mcap });
-      out = c0 && p.tokens ? X().sellOut(c0, p.tokens)*(1 - X().PP_FEE) - C.prio : 0;
-      X().txDelta(r.sig, mint).then(d => { if (d && d.sol !== null && p.jid){ const j = JOURNAL.list().find(x => x.id === p.jid); if (j) JOURNAL.upd(p.jid, { out: +d.sol.toFixed(9), pnl: +(d.sol - (j.in || 0)).toFixed(9), pnlPct: j.in ? +((d.sol/j.in - 1)*100).toFixed(2) : null, note: (j.note || "") + " · çıkış tx'ten kesin" }); } realBal(true); }); }
-    const pnl = out - p.solIn, pp = (out/p.solIn - 1)*100;
-    if (p.jid) JOURNAL.upd(p.jid, { out: +out.toFixed(9), closeT: Date.now(), sigOut: r.sig || "", reason: [JOURNAL.list().find(x => x.id === p.jid)?.reason, why].filter(Boolean).join(" → ") });
+    else { if (!W().unlocked()) throw new Error("BOT CÜZDANI kilitli"); r = await X().real({ action: "sell", mint, amount: part ? pctTxt + "%" : "100%", denominatedInSol: "false", slip: C.slip, prio: C.prio, pool: "auto", sym: p.sym }, tEv, { src: p.src, preKey: part ? null : "sell:" + mint, ref: c0 && c0.mcap });
+      out = c0 && p.tokens ? X().sellOut(c0, sellTok)*(1 - X().PP_FEE) - C.prio : 0; const est = out, acc0 = p.outAcc || 0;
+      X().txDelta(r.sig, mint).then(d => { if (!d){ realBal(true); return; }
+        if (part){ const q = posGet(mint); if (q){ const patch = {}; if (d.tokens > 0) patch.tokens = d.tokens; if (d.sol !== null) patch.outAcc = (q.outAcc || 0) + (d.sol - est); posUpd(mint, patch); } }
+        else if (d.sol !== null && p.jid){ const j = JOURNAL.list().find(x => x.id === p.jid); if (j){ const tot = acc0 + d.sol; JOURNAL.upd(p.jid, { out: +tot.toFixed(9), pnl: +(tot - (j.in || 0)).toFixed(9), pnlPct: j.in ? +((tot/j.in - 1)*100).toFixed(2) : null, note: (j.note || "") + " · çıkış tx'ten kesin" }); } }
+        realBal(true); }); }
+    if (part){ const cost = p.solIn*f, ppp = cost > 0 ? (out/cost - 1)*100 : 0;
+      posUpd(mint, { tokens: p.tokens - sellTok, solIn: p.solIn - cost, part: true, outAcc: (p.outAcc || 0) + out, cost0: p.cost0 || p.solIn });
+      if (p.jid){ const j = JOURNAL.list().find(x => x.id === p.jid); JOURNAL.upd(p.jid, { note: ((j && j.note) || "") + ` · kısmi %${pctTxt} → ${fmt(out, 4)} SOL (${pc(ppp)})` }); }
+      tl("sell", `◐ KISMİ SATIŞ <b>${esc(p.sym)}</b> %${pctTxt} · ${pc(ppp)} · +${fmt(out, 4)} SOL · ${esc(why)} · kalan %${100 - pctTxt} iz süren stopla devam${isReal() ? "" : " · SIM"}`, ppp >= 0 ? "up" : "dn", { sym: p.sym });
+      tape({ side: "sell", sym: p.sym, sol: out, who: isReal() ? "BOT" : "SIM", us: true, pnl: ppp });
+      NOTIFY.ping("good", `${isReal() ? "" : "SIM "}KISMİ SAT ${p.sym} %${pctTxt} ${pc(ppp)}`, !isReal()); ST.orb = 1; mark("sell", p.sym, out - cost); paint(); return r; }
+    const tot = (p.outAcc || 0) + out, cost = p.cost0 || p.solIn, pnl = tot - cost, pp = (tot/cost - 1)*100;
+    if (p.jid) JOURNAL.upd(p.jid, { out: +tot.toFixed(9), closeT: Date.now(), sigOut: r.sig || "", reason: [JOURNAL.list().find(x => x.id === p.jid)?.reason, why].filter(Boolean).join(" → ") });
     posDel(mint); stopMon(mint); riskOnClose(pnl); mark("sell", p.sym, pnl);
-    tl("sell", `▼ SATILDI <b>${esc(p.sym)}</b> ${pc(pp)} · ${sg(pnl, 4)} SOL · ${esc(why)}${isReal() ? "" : " · SIM"}`, pnl >= 0 ? "up" : "dn", { sym: p.sym, pnl });
+    tl("sell", `▼ SATILDI <b>${esc(p.sym)}</b> ${pc(pp)} · ${sg(pnl, 4)} SOL · ${esc(why)}${p.part ? " · kısmi satış dahil" : ""}${isReal() ? "" : " · SIM"}`, pnl >= 0 ? "up" : "dn", { sym: p.sym, pnl });
     tape({ side: "sell", sym: p.sym, sol: out, who: isReal() ? "BOT" : "SIM", us: true, pnl: pp });
     NOTIFY.ping(pnl >= 0 ? "good" : "bad", `${isReal() ? "" : "SIM "}SAT ${p.sym} ${pc(pp)}`, !isReal()); ST.orb = 1;
     if (pnl >= 0) fxWin(pnl, p.sym); else fxLoss();
     if (!simFree() && todayPnl() <= -C.dailyLoss && ST.on) stop(`günlük max zarar (${C.dailyLoss} SOL) doldu`);
     paint(); return r; }
-  catch(e){ tl("err", `✖ ${esc(p.sym)} satış başarısız: ${esc(e.message)}`, "dn"); if (isReal()) NOTIFY.ping("bad", `${p.sym} SATILAMADI`); const mo = ST.mons.get(mint); if (mo) mo.retryAt = Date.now() + 6000; return null; }
+  catch(e){ tl("err", `✖ ${esc(p.sym)} ${part ? "kısmi " : ""}satış başarısız: ${esc(e.message)}`, "dn"); if (isReal()) NOTIFY.ping("bad", `${p.sym} SATILAMADI`); const mo = ST.mons.get(mint); if (mo) mo.retryAt = Date.now() + 6000; return null; }
   finally { ST.busy.delete("s:" + mint); } }
 /* position monitor: live curve → value; TP / SL / trailing / time / graduation (exits run while OTO is armed) */
-function monitor(mint){ if (ST.mons.has(mint)) return; const p = posGet(mint); if (!p) return; const mo = { val: null, pnl: null, hi: null, t: null, retryAt: 0, preAt: 0, key: null }; ST.mons.set(mint, mo);
+function monitor(mint){ if (ST.mons.has(mint)) return; const p = posGet(mint); if (!p) return; const mo = { val: null, pnl: null, hi: null, hiAt: p.t, t: null, retryAt: 0, preAt: 0, key: null, mh: [] }; ST.mons.set(mint, mo);
+  const tk = PUMP.get(mint); FLOW.track(mint, p.curve, tk && tk.creator, tk && tk.at, tk && tk.mcap0); mo.flow = true;
   (async () => { mo.key = p.curve || await curveKey(mint); if (ST.mons.get(mint) === mo) watchCurve(mint, mo.key); else return; })();
   mo.t = setInterval(() => check(mint), 400); }
-function stopMon(mint){ const mo = ST.mons.get(mint); if (!mo) return; clearInterval(mo.t); ST.mons.delete(mint); if (mo.key) unwatchCurve(mint); }
-function check(mint){ const mo = ST.mons.get(mint), p = posGet(mint); if (!mo) return; if (!p){ stopMon(mint); return; } const c = curveOf(mint); if (!c || !p.tokens) return;
-  mo.val = Math.max(0, X().sellOut(c, p.tokens)*(1 - X().PP_FEE) - C.prio); mo.pnl = (mo.val/p.solIn - 1)*100; mo.mcap = c.mcap; mo.complete = c.complete; mo.hi = Math.max(mo.hi === null ? -1e9 : mo.hi, mo.pnl);
-  if (isReal() && W().unlocked() && Date.now() - mo.preAt > 20000){ mo.preAt = Date.now(); X().prebuild("sell:" + mint, { action: "sell", mint, amount: "100%", denominatedInSol: "false", slip: C.slip, prio: C.prio, pool: "auto" }, c.mcap); }
-  if (!ST.on || Date.now() < mo.retryAt || ST.busy.has("s:" + mint)) return;
-  const held = (Date.now() - p.t)/60000;
+function stopMon(mint){ const mo = ST.mons.get(mint); if (!mo) return; clearInterval(mo.t); ST.mons.delete(mint); if (mo.key) unwatchCurve(mint); if (mo.flow) FLOW.untrack(mint); }
+/* exit settings for SCORE.exitDecide: the classic fields (sl, tp, holdMin, trail) + the v7.5 dynamic ones (C.x) */
+const xcfg = () => Object.assign({}, C.x, { sl: C.sl, tp: C.tp, holdMin: C.holdMin, trailLo: C.trail });
+function exitFlow(mint, p, now){ const f = FLOW.flow(mint); if (!f) return {}; const tr = f.trades.filter(x => x.t >= p.t), w = SCORE.flowWin(tr, now, C.x.revSec, f.dev);
+  return { sellDom: w.sellDom, devSell: f.src === "logs" ? SCORE.flowWin(tr, now, 1e7, f.dev).devSell : 0, topDump: f.src === "logs" ? SCORE.topDump(f.trades, now, 10, f.dev) : false, src: f.src }; }
+function check(mint){ const mo = ST.mons.get(mint), p = posGet(mint); if (!mo) return; if (!p){ stopMon(mint); return; } const c = curveOf(mint); if (!c || !p.tokens) return; const now = Date.now();
+  mo.val = Math.max(0, X().sellOut(c, p.tokens)*(1 - X().PP_FEE) - C.prio); mo.pnl = (mo.val/p.solIn - 1)*100; mo.mcap = c.mcap; mo.complete = c.complete;
+  if (mo.hi === null || mo.pnl > mo.hi + 0.5) mo.hiAt = now; mo.hi = Math.max(mo.hi === null ? -1e9 : mo.hi, mo.pnl);
+  if (isReal() && W().unlocked() && now - mo.preAt > 20000){ mo.preAt = now; X().prebuild("sell:" + mint, { action: "sell", mint, amount: "100%", denominatedInSol: "false", slip: C.slip, prio: C.prio, pool: "auto" }, c.mcap); }
+  if (!ST.on || now < mo.retryAt || ST.busy.has("s:" + mint)) return;
+  const held = (now - p.t)/60000;
+  if (C.x && C.x.on){ const d = SCORE.exitDecide({ pnl: mo.pnl, hi: mo.hi, ageSec: (now - p.t)/1000, partDone: !!p.part, sinceHiSec: (now - (mo.hiAt || p.t))/1000, complete: c.complete, flow: exitFlow(mint, p, now) }, xcfg());
+    if (d) d.act === "part" ? exit(mint, d.why, undefined, d.pct/100) : exit(mint, d.why); return; }
   const why = mo.pnl >= C.tp ? `KÂR AL ${pc(mo.pnl)}` : mo.pnl <= -C.sl ? `ZARAR KES ${pc(mo.pnl)}` : C.trail > 0 && mo.hi >= C.trail && mo.pnl <= mo.hi - C.trail ? `İZ SÜREN STOP (zirve ${pc(mo.hi)})` : held >= C.holdMin ? `SÜRE DOLDU (${C.holdMin} dk)` : c.complete ? "curve tamamlandı (mezun)" : null;
   if (why) exit(mint, why); }
 /* ------------------------- WATCHER agent ------------------------- */
-function onNew(t){ ST.seen++; if (!ST.on || !C.w.on) return; const w = C.w;
+/* v7.5 flow: prefilter (old filters) → wait waitSec while the token's trades stream in → old checks → PUMP SKORU ≥ threshold + hard rejects → buy.
+   Learning ("öğrenme", sc.learn): while OTO is off the same pipeline runs and a pass is logged as "ALIRDI" and followed for 5 min — nothing is bought. */
+function onNew(t){ ST.seen++; if (!C.w.on) return; const learn = !ST.on && !!(C.sc && C.sc.learn); if (!ST.on && !learn) return; if (RMT()) return; const w = C.w;
   const why = t.pool !== "pump" ? "havuz pump değil" : t.devSol < w.minInit ? "dev alımı düşük" : t.mcap && t.mcap < w.minMcap ? "mcap düşük" : t.devPct > w.maxDev ? "dev payı yüksek" : t.serial > 1 ? "seri yaratıcı" : t.copy > 0 ? "kopya isim" : null;
-  if (why){ ST.wLast = `${t.symbol}: ${why}`; return; } if (ST.cands.size >= 6 || (!simFree() && posList().length >= C.maxPos)) return;
-  ST.passed++; const c = { t, at: Date.now(), first: null, hi: 0, last: null, odd: false };
-  const e = watchCurve(t.mint, t.curve); c.e = e; ST.cands.set(t.mint, c); PUMP.metaQ(t, true);
-  ST.wLast = `${t.symbol}: ${w.waitSec} sn momentum izleniyor`; tl("watch", `👁 İZLEYİCİ: <b>${esc(t.symbol)}</b> ilk filtreyi geçti · mcap ${fmt(t.mcap, 1)} · dev %${fmt(t.devPct, 1)}`, "dim");
+  if (why){ ST.wLast = `${t.symbol}: ${why}`; return; } if (ST.cands.size >= 6 || (!learn && !simFree() && posList().length >= C.maxPos)) return;
+  ST.passed++; const c = { t, at: Date.now(), first: null, hi: 0, last: null, odd: false, learn };
+  const e = watchCurve(t.mint, t.curve); c.e = e; ST.cands.set(t.mint, c); PUMP.metaQ(t, true); FLOW.track(t.mint, t.curve, t.creator, t.at, t.mcap0);
+  ST.wLast = `${t.symbol}: ${w.waitSec} sn akış izleniyor`; tl("watch", `👁 İZLEYİCİ: <b>${esc(t.symbol)}</b> ilk filtreyi geçti · mcap ${fmt(t.mcap, 1)} · dev %${fmt(t.devPct, 1)}`, "dim");
   c.iv = setInterval(() => { const cv = e.c; if (!cv) return; if (c.first === null){ c.first = cv.mcap; c.odd = Math.abs(cv.vSol - cv.rSol - 30) > 1.5; } c.last = cv.mcap; c.hi = Math.max(c.hi, cv.mcap); }, 250);
-  if (isReal()) setTimeout(() => { const cv = e.c; if (ST.cands.has(t.mint) && cv && cv.mcap >= (c.first || cv.mcap)) X().prebuild("buy:" + t.mint, { action: "buy", mint: t.mint, amount: riskSize("watcher"), denominatedInSol: "true", slip: C.slip, prio: C.prio, pool: "pump" }, cv.mcap); }, Math.max(1000, (w.waitSec - 4)*1000));
+  if (isReal() && !learn) setTimeout(() => { const cv = e.c; if (ST.on && ST.cands.has(t.mint) && cv && cv.mcap >= (c.first || cv.mcap)) X().prebuild("buy:" + t.mint, { action: "buy", mint: t.mint, amount: riskSize("watcher"), denominatedInSol: "true", slip: C.slip, prio: C.prio, pool: "pump" }, cv.mcap); }, Math.max(1000, (w.waitSec - 4)*1000));
   setTimeout(() => decide(t.mint), w.waitSec*1000); }
+const scShort = sc => `skor <b>${sc.score}</b>${sc.m.src === "curve" ? " <small>(yalnızca curve)</small>" : ""}: ${esc(sc.why.slice(0, 4).join(", "))}`;
 async function decide(mint, again){ const c = ST.cands.get(mint); if (!c) return; const t = c.t, w = C.w;
-  const done = (msg, cls) => { clearInterval(c.iv); ST.cands.delete(mint); unwatchCurve(mint); if (msg) tl("watch", msg, cls || "dim"); };
-  if (!ST.on) return done();
+  const done = (msg, cls, kind) => { clearInterval(c.iv); ST.cands.delete(mint); unwatchCurve(mint); FLOW.untrack(mint); if (msg) tl(kind || "watch", msg, cls || "dim"); };
+  if (!ST.on && !c.learn) return done();
   if (w.needSoc && !t.meta && !t.metaErr && !again){ setTimeout(() => decide(mint, true), 4000); return; }
   PUMP.risk(t); const mom = c.first && c.last ? (c.last/c.first - 1)*100 : null, soc = t.meta && (t.meta.tw || t.meta.tg || t.meta.web);
   const no = c.first === null ? "canlı curve verisi yok" : c.odd ? "standart dışı curve" : w.needSoc && !soc ? "sosyal yok" : t.risk > w.maxRisk ? `risk ${t.risk} > ${w.maxRisk}` : mom < w.minMom ? `momentum ${pc(mom)} < %${w.minMom}` : c.last > w.maxMcap ? `mcap ${fmt(c.last, 1)} > ${w.maxMcap}` : c.e.c && c.e.c.complete ? "curve tamamlandı" : c.last < c.hi*0.8 ? "zirveden %20+ düştü" : null;
   if (no){ ST.wLast = `${t.symbol}: elendi (${no})`; return done(`✖ ${esc(t.symbol)} elendi: ${esc(no)}`); }
+  let fl = FLOW.flow(mint); if (C.sc && C.sc.on && fl && fl.src === "curve"){ await FLOW.backfill(mint); if (!ST.cands.has(mint)) return; fl = FLOW.flow(mint); } let sc = null;
+  if (C.sc && C.sc.on){ sc = SCORE.pumpScore(fl || { trades: [], mcaps: [] }, Date.now(), C.sc); ST.scN++; ST.scores.push(sc.score); if (ST.scores.length > 500) ST.scores.shift();
+    if (!sc.pass){ ST.wLast = `${t.symbol}: skor ${sc.score}${sc.hard ? " · " + sc.hard : ""}`; return done(`✖ ${esc(t.symbol)} ${scShort(sc)} → ${sc.hard ? "<b>" + esc(sc.hard) + "</b>" : `eşik ${sc.min} altı`}${c.learn ? " · öğrenme" : ""}`, "dim", "score"); }
+    ST.scPass++; }
+  if (c.learn || !ST.on){ const rec = wouldBuy(t, c, sc, mom); done(); return rec; }
   const tEv = performance.now(); clearInterval(c.iv); ST.cands.delete(mint);
-  await enter({ mint, sym: t.symbol, src: "watcher", tEv, curve: t.curve, reason: `İZLEYİCİ: momentum ${pc(mom)}, risk ${t.risk}`, c0: c.e.c });
-  unwatchCurve(mint); }
+  if (sc) tl("score", `✔ ${esc(t.symbol)} ${scShort(sc)} → AL`, "up");
+  await enter({ mint, sym: t.symbol, src: "watcher", tEv, curve: t.curve, reason: `İZLEYİCİ: ${sc ? "skor " + sc.score + " (" + sc.why.slice(0, 3).join(", ") + "), " : ""}momentum ${pc(mom)}, risk ${t.risk}`, c0: c.e.c, hc: simHcNow(fl && fl.mcaps) });
+  unwatchCurve(mint); FLOW.untrack(mint); }
+/* ------------------------- learning: "would buy" log ------------------------- */
+const WBK = "neon.meme.wb"; let WB = (() => { try { return JSON.parse(localStorage.getItem(WBK) || "[]"); } catch(e){ return []; } })();
+const wbSave = () => { try { localStorage.setItem(WBK, JSON.stringify(WB.slice(0, 150))); } catch(e){} };
+function wouldBuy(t, c, sc, mom){ ST.wb++; const m0 = c.last; const rec = { t: Date.now(), mint: t.mint, sym: t.symbol, s: sc ? sc.score : null, m0, hi: m0, lo: m0, last: m0, done: false, mode: C.mode };
+  WB.unshift(rec); if (WB.length > 150) WB.length = 150; wbSave();
+  tl("score", `🧪 ALIRDI <b>${esc(t.symbol)}</b> · ${sc ? scShort(sc) : "skor kapalı"} · mcap ${fmt(m0, 1)}${ST.on ? "" : " · OTO kapalı, alınmadı"} — 5 dk izleniyor`, "y");
+  const key = (c.e && c.e.key) || t.curve; if (!key || ST.wbLive >= 10){ rec.done = true; rec.skip = true; wbSave(); return rec; } ST.wbLive++;
+  const un = PUMP.curveSub(key, cv => { rec.last = cv.mcap; rec.hi = Math.max(rec.hi, cv.mcap); rec.lo = Math.min(rec.lo, cv.mcap); });
+  setTimeout(() => { un(); ST.wbLive--; rec.done = true; rec.pHi = +((rec.hi/m0 - 1)*100).toFixed(1); rec.pLo = +((rec.lo/m0 - 1)*100).toFixed(1); rec.p5 = +((rec.last/m0 - 1)*100).toFixed(1); wbSave();
+    tl("score", `🧪 ${esc(t.symbol)} 5 dk sonra: zirve ${pc(rec.pHi)} · dip ${pc(rec.pLo)} · son ${pc(rec.p5)} <small>(ücretler hariç)</small>`, rec.p5 >= 0 ? "up" : "dn"); paint(true); }, 300000);
+  return rec; }
 /* ------------------------- COPIER agent ------------------------- */
 function onCopy(ev){ if (ev.kind !== "trade"){ paintAgentsQ(); paintWalletsQ(); return; } const t = ev.t;
   tape({ side: t.isBuy ? "buy" : "sell", sym: (PUMP.get(t.mint) || {}).symbol || short(t.mint), sol: t.sol, who: lab(t.wallet) });
@@ -249,11 +343,11 @@ function limitsErr(){ const e = []; if (!simFree()){ if (C.maxTrade < C.base) e.
 async function arm(silent){ if (ST.on) return true; if (RMT()){ if (!silent) NOTIFY.toast("SUNUCU eşli: OTO sunucuda çalışır — telefonda yerel OTO başlatılmaz", "bad"); return false; } const e = limitsErr(); if (e.length){ NOTIFY.toast("✖ " + e.join("; "), "bad"); return false; }
   if (isReal()){ if (!W().exists()){ NOTIFY.toast("✖ GERÇEK mod için önce BOT CÜZDANI oluştur (CÜZDAN sekmesi)", "bad"); return false; } if (!W().unlocked()){ NOTIFY.toast("✖ BOT CÜZDANI kilitli — CÜZDAN sekmesinde PIN ile aç", "bad"); return false; }
     if (!silent){ if (!C.acceptedReal){ if (!(await riskSheet())) return false; C.acceptedReal = true; save(); }
-      if (!(await T().confirmSheet({ title: "GERÇEK OTO AL-SAT'I BAŞLAT", mode: "GERÇEK", rows: [["Cüzdan", "BOT " + short(W().pub())], ["Temel boyut", (C.cmp && C.cmp.on ? ("bileşik % " + C.cmp.pct + " × " + (R.cmpMult || 1) + "x → " + fmt(riskSize("watcher"), 3) + " SOL") : (C.base + " SOL × risk çarpanı " + R.mult + "x"))], ["İşlem başı max", C.maxTrade + " SOL"], ["Toplam bütçe", C.budget + " SOL"], ["Günlük max zarar", C.dailyLoss + " SOL", "dn"], ["Max açık pozisyon", String(C.maxPos)], ["Çıkış", `+%${C.tp} / −%${C.sl} / iz %${C.trail} / ${C.holdMin} dk`], ["Ajanlar", `İzleyici ${C.w.on ? "açık" : "kapalı"} · Kopyacı ${C.cp.on ? COPY.list.filter(w => w.on !== false).length + " cüzdan" : "kapalı"}${C.gk.gate ? " · GROK onayı" : ""}`]], warn: "Bundan sonra bot bu limitler içinde <b>onay sormadan</b> alıp satar. ■ HEPSİNİ DURDUR her zaman ekranda.", okText: "ONAYLA · OTO BAŞLAT" }))) return false; } }
+      if (!(await T().confirmSheet({ title: "GERÇEK OTO AL-SAT'I BAŞLAT", mode: "GERÇEK", rows: [["Cüzdan", "BOT " + short(W().pub())], ["Temel boyut", (C.cmp && C.cmp.on ? ("bileşik % " + C.cmp.pct + " × " + (R.cmpMult || 1) + "x → " + fmt(riskSize("watcher"), 3) + " SOL") : (C.base + " SOL × risk çarpanı " + R.mult + "x"))], ["İşlem başı max", C.maxTrade + " SOL"], ["Toplam bütçe", C.budget + " SOL"], ["Günlük max zarar", C.dailyLoss + " SOL", "dn"], ["Max açık pozisyon", String(C.maxPos)], ["Çıkış", C.x && C.x.on ? `dinamik: erken −%${C.x.early} · kısmi +%${C.x.ptp} · iz %${C.trail}/%${C.x.trailHi} · sert −%${C.sl} · ${C.holdMin} dk` : `+%${C.tp} / −%${C.sl} / iz %${C.trail} / ${C.holdMin} dk`], ["Alım kapısı", C.sc && C.sc.on ? `pump skoru ≥ ${C.sc.min}` : "kapalı (yalnızca filtreler)"], ["Ajanlar", `İzleyici ${C.w.on ? "açık" : "kapalı"} · Kopyacı ${C.cp.on ? COPY.list.filter(w => w.on !== false).length + " cüzdan" : "kapalı"}${C.gk.gate ? " · GROK onayı" : ""}`]], warn: "Bundan sonra bot bu limitler içinde <b>onay sormadan</b> alıp satar. ■ HEPSİNİ DURDUR her zaman ekranda.", okText: "ONAYLA · OTO BAŞLAT" }))) return false; } }
   ST.on = true; R = rLoad(C.mode); if (R.eqHigh === null){ R.eqHigh = equity(); rSave(); } X().keepWarm(true); if (!PUMP.live) PUMP.start(); if (COPY.list.length) COPY.open();
   for (const p of posList()) monitor(p.mint); wake(true); tl("arm", `▶ OTO BAŞLADI · <b>${C.mode}</b> · ${[C.w.on && "İzleyici", C.cp.on && "Kopyacı", C.gk.gate && "GROK onayı"].filter(Boolean).join(" + ")}`, "up");
   window.BUS && BUS.emit("state", { node: "bt", on: true }); afterToggle(); return true; }
-function stop(reason){ if (!ST.on) return; ST.on = false; for (const [m, c] of ST.cands){ clearInterval(c.iv); unwatchCurve(m); } ST.cands.clear(); if (!isReal()) X().keepWarm(false); wake(false);
+function stop(reason){ if (!ST.on) return; ST.on = false; for (const [m, c] of ST.cands){ clearInterval(c.iv); unwatchCurve(m); FLOW.untrack(m); } ST.cands.clear(); if (!isReal()) X().keepWarm(false); wake(false);
   tl("stop", `■ OTO DURDU: ${esc(reason || "elle")}`, "dn"); if (reason && reason !== "elle kapatıldı") NOTIFY.ping("bad", "OTO durdu: " + reason); afterToggle(); }
 function afterToggle(){ document.body.classList.toggle("meme-on", ST.on); fab(); paint(true); }
 function fab(){ const f = $("#killfab"); if (f) f.classList.toggle("hidden", !(ST.on || (RMT() && REMOTE.on()) || (window.AUTO && (AUTO.bnOn() || AUTO.pumpOn())))); }
@@ -299,7 +393,7 @@ function gateInfo(o){ const t = PUMP.get(o.mint) || {}, m = t.meta || {}; const 
 function context(){ if (RMT() && REMOTE.ctx()) return REMOTE.ctx(); const e = equity(), d = depBase(); const J = JOURNAL.list().filter(x => x.venue === "pump.fun" && x.wallet === walletTag()).slice(-12); const s = X().stats();
   const sel = PUMP._S.sel; return { time: new Date().toLocaleString("tr-TR", { timeZone: TZ }), mode: C.mode, autoOn: ST.on, equitySol: e && +e.toFixed(4), depositSol: d, sinceDepositPct: e && d ? +((e/d - 1)*100).toFixed(2) : null, todayPnlSol: +todayPnl().toFixed(4), solUsd: PUMP.solUsd,
     risk: { mult: R.mult, consecLoss: R.consec, pausedUntil: R.pauseUntil > Date.now() ? tm(R.pauseUntil) : null, equityHigh: R.eqHigh, wins: R.wins, losses: R.losses, cmpMult: R.cmpMult || 1 },
-    settings: { base: C.base, maxTrade: C.maxTrade, budget: C.budget, dailyLoss: C.dailyLoss, maxPos: C.maxPos, tp: C.tp, sl: C.sl, trail: C.trail, holdMin: C.holdMin, slip: C.slip, prio: C.prio, w: C.w, cp: C.cp, rules: C.rules, gk: C.gk, cmp: C.cmp, fx: C.fx, goal: C.goal },
+    settings: { base: C.base, maxTrade: C.maxTrade, budget: C.budget, dailyLoss: C.dailyLoss, maxPos: C.maxPos, tp: C.tp, sl: C.sl, trail: C.trail, holdMin: C.holdMin, slip: C.slip, prio: C.prio, w: C.w, sc: C.sc, x: C.x, cp: C.cp, rules: C.rules, gk: C.gk, cmp: C.cmp, fx: C.fx, goal: C.goal },
     positions: posList().map(p => { const mo = ST.mons.get(p.mint) || {}; return { sym: p.sym, mint: p.mint, src: p.src, costSol: +(+p.solIn).toFixed(4), valueSol: mo.val ? +mo.val.toFixed(4) : null, pnlPct: isFinite(mo.pnl) && mo.pnl !== null ? +mo.pnl.toFixed(1) : null, ageMin: Math.round((Date.now() - p.t)/60000) }; }),
     lastTrades: J.map(x => ({ sym: x.sym, src: x.src, in: x.in, out: x.out, pnlPct: x.pnlPct, reason: x.reason, at: tm(x.openT) })),
     trackedWallets: COPY.list.map(w => { const st = COPY.stat(w.addr); return { label: w.label, addr: w.addr, on: w.on !== false, sessionTrades: st.n, buys: st.buys, sells: st.sells, solIn: +st.solIn.toFixed(3), solOut: +st.solOut.toFixed(3) }; }),
@@ -390,12 +484,23 @@ function html(){ const real = isReal(), ex = X().C;
     <details class="keys"><summary>⚙ BOYUT · LİMİTLER · ÇIKIŞ</summary>
       <div class="f3">${inp("base", "Temel boyut SOL")}${inp("maxTrade", "İşlem başı max SOL")}${inp("budget", "Toplam bütçe SOL")}</div>
       <div class="f3">${inp("dailyLoss", "Günlük max zarar SOL")}${inp("maxPos", "Max açık poz.")}${inp("holdMin", "Max tutma dk")}</div>
-      <div class="f3">${inp("tp", "Kâr al +%")}${inp("sl", "Zarar kes −%")}${inp("trail", "İz süren stop % (0=kapalı)")}</div></details>
+      <div class="f3">${inp("tp", "Tam kâr al +%")}${inp("sl", "Sert zarar kes −%")}${inp("trail", "İz süren stop % (0=kapalı)")}</div>
+      <div class="plan-foot">Dinamik çıkış açıkken: “tam kâr al” kalan pozisyonun tavanıdır, iz süren stop zirve +%${esc(C.x.trailSw)} altındayken geçerlidir (üstünde %${esc(C.x.trailHi)}). Ayrıntılar aşağıda “📉 DİNAMİK ÇIKIŞ”ta.</div></details>
+    <details class="keys" id="mm-x-d"><summary>📉 DİNAMİK ÇIKIŞ</summary>${chk("x.on", "Dinamik çıkış açık (kapalıysa yalnızca kâr al / zarar kes / iz / süre)")}
+      <div class="f3">${inp("x.early", "Erken stop −%")}${inp("x.earlySec", "Erken stop: ilk sn")}${inp("x.momFail", "Momentum yok −%")}</div>
+      <div class="f3">${inp("x.be", "Başa baş: zirve ≥ +%")}${inp("x.ptp", "Kısmi kâr +%")}${inp("x.ptpPct", "Kısmi satış %")}</div>
+      <div class="f3">${inp("x.trailHi", "Sıkı iz %")}${inp("x.trailSw", "Sıkı iz: zirve ≥ +%")}${inp("x.flatMin", "Yatay çıkış dk (0=kapalı)")}</div>
+      <div class="f3">${chk("x.rev", "Akış dönünce sat")}${inp("x.revSec", "Akış penceresi sn")}${chk("x.simHc", "SIM kayma payı")}</div>
+      <div class="plan-foot">Sıra: sert zarar kes → erken stop (ilk ${esc(C.x.earlySec)} sn içinde −%${esc(C.x.early)}) → momentum yok (ilk dakikada +%${esc(C.x.momUp)} görmeden −%${esc(C.x.momFail)}) → dev sattı / en büyük alıcı boşaltıyor → akış döndü (son ${esc(C.x.revSec)} sn satıcılar baskın) → tam kâr al → kısmi kâr (+%${esc(C.x.ptp)}'te %${esc(C.x.ptpPct)} sat) → iz süren stop (zirveden %${esc(C.trail)}, zirve +%${esc(C.x.trailSw)} üstünde %${esc(C.x.trailHi)}) → başa baş (zirve +%${esc(C.x.be)} olduysa +%${esc(C.x.beLock)}'e düşünce sat) → yatay (${esc(C.x.flatMin)} dk yeni zirve yok ve +%${esc(C.x.flatBand)} altı) → max tutma → mezun. pump.fun'da fiyat çok hızlı düşebilir; satış stop seviyesinin altında dolabilir. SIM kayma payı: her dolumda %1 + son 3 sn'deki hareketin yarısı (en fazla %15) düşülür.</div></details>
+    <details class="keys" id="mm-sc-d"><summary>🎯 PUMP SKORU · alım kararı</summary>${chk("sc.on", "Skor kapısı açık (skor ≥ eşik olmadan alma)")}${chk("sc.learn", "Öğrenme: OTO kapalıyken de puanla, “ALIRDI” kaydet (hiçbir şey alınmaz)")}
+      <div class="f3">${inp("sc.min", "Skor eşiği 0–100")}${inp("sc.minBuyers", "Min alıcı (dev hariç)")}${inp("sc.maxTop", "Tek cüzdan ≤ % alım")}</div>
+      <div class="plan-foot">Bekleme süresi boyunca tokenın tüm işlemleri okunur (Solana RPC logsSubscribe, anahtarsız). Ağırlıklar: alıcı sayısı ${SCORE.W.buyers} · alım/satım sayısı ${SCORE.W.ratio} · net SOL girişi ${SCORE.W.inflow} · dağılım (en büyük cüzdan payı) ${SCORE.W.conc} · hız (mcap eğimi) ${SCORE.W.vel} · zirveden düşüş ${SCORE.W.dd} · temizlik (paket/sniper, aynı boyut) ${SCORE.W.clean} = 100. Hemen elenir: dev sattı · alıcı < min · tek cüzdan > eşik · ilk 2 sn'de ≥4 cüzdan alımların yarısından fazlası (paket/sniper) · aynı SOL boyutunda tekrarlı alım · zirveden %25+ düşüş · net giriş yok · cüzdan verisi okunamadı (yalnızca curve). Eski filtreler ön filtre olarak kalır. Skor bir olasılık göstergesidir, kâr garantisi değildir.</div>
+      <div id="mm-sc-st" class="mm-scst"></div></details>
     <details class="keys"><summary>👁 İZLEYİCİ filtreleri</summary>${chk("w.on", "İzleyici açık (yeni token girişleri)")}
       <div class="f3">${inp("w.minInit", "Min dev alımı SOL")}${inp("w.minMcap", "Min mcap SOL")}${inp("w.maxMcap", "Max mcap SOL")}</div>
       <div class="f3">${inp("w.maxDev", "Dev payı ≤ %")}${inp("w.maxRisk", "Rug riski ≤")}${inp("w.waitSec", "Bekle sn")}</div>
       <div class="f2">${inp("w.minMom", "Momentum ≥ %")}${chk("w.needSoc", "sosyal hesap şart")}</div>
-      <div class="plan-foot">Yeni token ilk filtreleri geçerse bekleme süresi boyunca bonding curve canlı izlenir; sonunda momentum ≥ eşik, risk ≤ eşik ve zirveden %20'den az düşmüşse RİSK ajanının boyutuyla alınır.</div></details>
+      <div class="plan-foot">Yeni token ilk filtreleri geçerse bekleme süresi boyunca bonding curve ve tüm işlemleri canlı izlenir; sonunda momentum ≥ eşik, risk ≤ eşik, zirveden %20'den az düşmüş ve <b>PUMP SKORU</b> ≥ eşikse RİSK ajanının boyutuyla alınır.</div></details>
     <details class="keys"><summary>🔁 KOPYACI</summary>${chk("cp.on", "Kopyacı açık")}${chk("cp.follow", "Cüzdan satınca biz de satalım (aynı çıkış)")}
       <div class="f3">${inp("cp.minSrc", "Min kaynak alımı SOL")}${inp("cp.maxMcap", "Max mcap SOL")}${inp("cp.cool", "Aynı token bekleme sn")}</div>
       <div class="f3">${inp("cp.max10", "Cüzdan başı 10 dk max")}<label>Boyut<select data-m="cp.sizeMode"><option value="fixed" ${C.cp.sizeMode === "fixed" ? "selected" : ""}>sabit</option><option value="ratio" ${C.cp.sizeMode === "ratio" ? "selected" : ""}>oran×kaynak</option></select></label>${inp("cp.ratio", "Oran")}</div>
@@ -458,7 +563,13 @@ function paint(full){ if (document.hidden) return; if (!$("#mm-eq")) return; con
   const arm = $("#mm-arm"); arm.textContent = ST.on ? "■ OTO DURDUR" : "▶ OTO BAŞLAT"; arm.classList.toggle("on", ST.on);
   const J = JOURNAL.list().filter(x => x.venue === "pump.fun" && x.wallet === walletTag() && typeof x.pnl === "number"), w = J.filter(x => x.pnl > 0).length, tp = todayPnl();
   $("#mm-kpis").innerHTML = `<div><small>BUGÜN</small><b class="${tp >= 0 ? "up" : "dn"}">${sg(tp, 4)}</b></div><div><small>İŞLEM</small><b>${J.length}</b></div><div><small>KAZANMA</small><b>${J.length ? Math.round(w/J.length*100) + "%" : "—"}</b></div><div><small>AÇIK</small><b>${posList().length}/${C.maxPos}</b></div>`;
-  paintPos(); paintAgents(); paintLadder(); paintLat(); drawEq(); if (full || Date.now() - lastFull > 5000){ lastFull = Date.now(); paintTL(); paintTape(); paintWallets(); } }
+  paintPos(); paintAgents(); paintLadder(); paintLat(); drawEq(); if (full || Date.now() - lastFull > 5000){ lastFull = Date.now(); paintTL(); paintTape(); paintWallets(); paintScore(); } }
+function scStats(){ const b = [0, 0, 0, 0, 0]; for (const x of ST.scores) b[Math.min(4, Math.floor(x/20))]++; const D = WB.filter(r => r.done && !r.skip && isFinite(r.p5)), avg = k => D.length ? D.reduce((a, r) => a + r[k], 0)/D.length : null;
+  return { n: ST.scN, pass: ST.scPass, buckets: b, wb: WB.length, wbDone: D.length, avgHi: avg("pHi"), avg5: avg("p5"), hit40: D.filter(r => r.pHi >= 40).length, flow: FLOW.stat }; }
+function paintScore(){ const el = $("#mm-sc-st"); if (!el) return; const s = scStats(), R_ = (k, v, c) => `<div><span>${k}</span><b class="${c || ""}">${v}</b></div>`;
+  el.innerHTML = R_("skorlanan / geçen", `${s.n} / ${s.pass}`) + R_("skor 0·20·40·60·80+", s.buckets.join(" · ")) + R_("ALIRDI (5 dk izlenen)", `${s.wb} (${s.wbDone})`)
+    + R_("ALIRDI ort. zirve / 5 dk", s.avgHi === null ? "—" : pc(s.avgHi) + " / " + pc(s.avg5)) + R_("ALIRDI +%40'a değen", s.wbDone ? s.hit40 + "/" + s.wbDone : "—")
+    + R_("akış", s.flow.open ? `● ${s.flow.subs}/${s.flow.want} abone · ${s.flow.trades} işlem · yedek ${s.flow.bf}` : "—", s.flow.open ? "up" : "dim"); }
 const srcLab = s => s === "copy" ? "KOPYA" : s === "watcher" ? "İZLEYİCİ" : s === "grok" ? "GROK" : "ELLE";
 function paintPos(){ const el = $("#mm-pos"); if (!el) return; const L = posList(); $("#mm-posn").textContent = L.length ? `${L.length} · ${fmt(deployed(), 3)} SOL` : "";
   el.innerHTML = L.length ? L.map(p => { const mo = ST.mons.get(p.mint) || {}, pn = mo.pnl, has = isFinite(pn) && pn !== null; return `<div class="pos ${!has ? "" : pn >= 0 ? "l" : "s"}"><b>${esc(p.sym)} <span class="pill ${p.src === "copy" ? "m" : "y"}">${srcLab(p.src)}</span>${p.wallet ? ` <small>${esc(lab(p.wallet))}</small>` : ""}</b>
@@ -468,7 +579,7 @@ function paintPos(){ const el = $("#mm-pos"); if (!el) return; const L = posList
 function paintAgents(){ if (!$("#agb-w")) return; const s = X().stats(), cpOn = COPY.list.filter(w => w.on !== false).length;
   const st = (id, txt, on) => { const e = $("#ags-" + id); e.textContent = txt; e.className = "ag-st " + (on ? "on" : ""); $("#ag-" + id).classList.toggle("live", !!on); };
   st("w", ST.on && C.w.on ? "● İZLİYOR" : C.w.on ? "○ hazır" : "kapalı", ST.on && C.w.on);
-  $("#agb-w").innerHTML = `<div><span>görülen</span><b>${ST.seen}</b></div><div><span>filtreyi geçen</span><b>${ST.passed}</b></div><div><span>aday</span><b>${ST.cands.size}</b></div><div><span>yeni/dk</span><b>${PUMP._S.rate.length}</b></div><div class="ag-l">${esc(ST.wLast || "yeni token bekleniyor")}</div>`;
+  $("#agb-w").innerHTML = `<div><span>görülen</span><b>${ST.seen}</b></div><div><span>filtreyi geçen</span><b>${ST.passed}</b></div><div><span>aday</span><b>${ST.cands.size}</b></div><div><span>skor geçen</span><b>${ST.scPass}/${ST.scN}</b></div><div><span>yeni/dk</span><b>${PUMP._S.rate.length}</b></div><div class="ag-l">${esc(ST.wLast || "yeni token bekleniyor")}</div>`;
   st("c", ST.on && C.cp.on && cpOn ? "● KOPYALIYOR" : !cpOn ? "cüzdan yok" : C.cp.on ? "○ hazır" : "kapalı", ST.on && C.cp.on && cpOn);
   $("#agb-c").innerHTML = `<div><span>cüzdan</span><b>${cpOn}/${COPY.list.length}</b></div><div><span>WS abonelik</span><b class="${COPY.live ? "up" : "dim"}">${COPY.live ? COPY.subs + (COPY.poll.on ? " +HTTP" : "") : "—"}</b></div><div><span>görülen işlem</span><b>${COPY.list.reduce((a, w) => a + COPY.stat(w.addr).n, 0)}</b></div><div><span>kopya</span><b>${JOURNAL.list().filter(x => x.src === "copy" && x.wallet === walletTag() && x.openT >= today0()).length}</b></div><div class="ag-l">${ST.lastCopy ? `son: <b>${esc(ST.lastCopy.sym)}</b> ← ${esc(lab(ST.lastCopy.w))} · ${tm(ST.lastCopy.at)}` : ST.cpSkip ? esc(ST.cpSkip) : "henüz kopya yok"}</div>`;
   st("x", s.pend ? "● GÖNDERİYOR" : isReal() ? (W().unlocked() ? "● HAZIR" : "🔒 kilitli") : "SIM", s.pend || (isReal() && W().unlocked()));
@@ -549,7 +660,7 @@ function snap(){ const e = equity(), d = depBase(), s = X().stats(), J = JOURNAL
       cp: { live: !!COPY.live, subs: COPY.subs, poll: !!(COPY.poll && COPY.poll.on), last: ST.lastCopy ? { sym: ST.lastCopy.sym, w: lab(ST.lastCopy.w), at: ST.lastCopy.at } : null, skip: ST.cpSkip || "", list: COPY.list.map(w => { const st = COPY.stat(w.addr); return { addr: w.addr, label: w.label, on: w.on !== false, n: st.n, buys: st.buys, sells: st.sells }; }) },
       x: { ev2sent: r4(s.ev2sent), sent2conf: r4(s.sent2conf), conf: s.conf, fail: s.fail, pend: s.pend, bhAge: s.bhAge } },
     lat: X().lat.slice(0, 8).map(m => ({ t: m.t, side: m.side, sym: m.sym, ev2sent: r4(m.ev2sent), sent2conf: r4(m.sent2conf), ok: m.ok, via: m.via, err: m.err })),
-    tl: TL.filter(x => x.k !== "watch").slice(0, 60), tape: TAPE.slice(0, 30), errs: TL.filter(x => x.k === "err" || x.k === "warn").slice(0, 10), eq, mk: MK.filter(m => eq.length && m.t >= eq[0][0]).slice(-80),
+    sc: scStats(), tl: TL.filter(x => x.k !== "watch").slice(0, 60), tape: TAPE.slice(0, 30), errs: TL.filter(x => x.k === "err" || x.k === "warn").slice(0, 10), eq, mk: MK.filter(m => eq.length && m.t >= eq[0][0]).slice(-80),
     wallet: { exists: W().exists(), pub: W().pub(), unlocked: W().unlocked(), bal: r4(ST.real.bal) } }; }
 async function ctl(cmd, a = {}){ switch (cmd){
   case "arm": { if (isReal() && !W().unlocked()) throw new Error("BOT CÜZDANI kilitli — önce PIN ile aç"); const e = limitsErr(); if (e.length) throw new Error(e.join("; ")); const ok = await arm(true); if (!ok) throw new Error("OTO başlatılamadı"); return "OTO açık"; }
@@ -582,6 +693,6 @@ for (const p of posList()) monitor(p.mint);
 if (isReal()){ realBal(true); X().keepWarm(true); }
 if (C.autoStart){ if (!isReal()) setTimeout(() => arm(true).then(ok => ok && NOTIFY.toast("otomatik başlat: OTO açıldı (SIM)", "good")), 1500);
   else { const iv = setInterval(() => { if (ST.on || !C.autoStart || C.mode !== "GERÇEK"){ clearInterval(iv); return; } if (W().unlocked()){ clearInterval(iv); arm(true).then(ok => ok && NOTIFY.ping("bad", "otomatik başlat: GERÇEK OTO açıldı")); } }, 2000); } }
-return { snap, ctl, get remote(){ return RMT(); }, get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, endPause, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList, sizeCalc, riskSize, riskCheck, riskOnClose, simFree, simPreset10k, fxWin, fxBuy, fxLoss, goalRestart };
+return { FLOW, scStats, get WB(){ return WB; }, check, exit, xcfg, snap, ctl, get remote(){ return RMT(); }, get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, endPause, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList, sizeCalc, riskSize, riskCheck, riskOnClose, simFree, simPreset10k, fxWin, fxBuy, fxLoss, goalRestart };
 })();
 window.MEME = MEME;

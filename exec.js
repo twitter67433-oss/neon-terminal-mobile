@@ -114,10 +114,12 @@ async function sim(o, getC, c0, tEv, meta = {}){ const m = { t: Date.now(), mode
     let res; if (o.action === "buy"){ if (c.complete) throw new Error("curve tamamlandı (AMM) — SIM alım yok");
       const tok = buyOut(c, o.sol), exp = c0 ? buyOut(c0, o.sol) : tok;
       if (tok < exp*(1 - o.slip/100)) throw new Error(`kayma aşıldı (beklenen ${exp.toFixed(0)}, dolum ${tok.toFixed(0)})`);
-      const cost = o.sol*(1 + PP_FEE) + fee + (meta.newAta ? RENT : 0); res = { tokens: tok, sol: -cost, px: o.sol/tok }; }
+      const hc = Math.max(0, Math.min(0.3, +meta.hc || 0)), tokH = tok*(1 - hc); m.hc = hc; /* v7.5 SIM haircut: adverse fill / MEV on fast moves */
+      const cost = o.sol*(1 + PP_FEE) + fee + (meta.newAta ? RENT : 0); res = { tokens: tokH, sol: -cost, px: o.sol/tokH }; }
     else { let out = c.complete ? o.tokens*(c.vSol/c.vTok)*(1 - 0.02) : sellOut(c, o.tokens), exp = c0 ? sellOut(c0, o.tokens) : out;
       if (out < exp*(1 - o.slip/100)) out = exp*(1 - o.slip/100); /* real tx would fail; we assume the retry fills at the slippage limit */
-      res = { tokens: -o.tokens, sol: out*(1 - PP_FEE) - fee, px: out/o.tokens }; }
+      const hc = Math.max(0, Math.min(0.3, +meta.hc || 0)); out *= (1 - hc); m.hc = hc;
+      res = { tokens: -o.tokens, sol: Math.max(0, out*(1 - PP_FEE) - fee), px: out/o.tokens }; }
     m.sent2conf = now() - tSend; m.ok = true; ST.sent++; ST.conf++; record(m); window.BUS && BUS.emit("order", { to: "pf", from: "bt" }); return Object.assign(res, { m }); }
   catch(e){ ST.fail++; m.ok = false; m.err = e.message; record(m); throw e; } finally { ST.pend--; } }
 /* ---------------- latency probe (nothing is sent) ---------------- */

@@ -166,3 +166,8 @@ body.mm-flash-loss::after{content:"";position:fixed;inset:0;background:rgba(255,
 .mm-simquick .mini{flex:0 0 auto;padding:8px 12px}
 .mm-simquick .chk{margin:0;font-size:11px}
 .mm-free-pill{color:#ffe600;border-color:#ffe600;text-shadow:0 0 8px #ffe60088}
+
+/* v7.5 score stats */
+.mm-scst{display:flex;flex-direction:column;gap:4px;margin-top:6px;font-size:12px}
+.mm-scst div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed rgba(0,240,255,.12);padding:2px 0}
+.mm-scst span{opacity:.75}
