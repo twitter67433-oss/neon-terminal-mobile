@@ -14,13 +14,15 @@ const ms = x => x === null || x === undefined || !isFinite(x) ? "—" : x >= 100
 const T = () => window.TRADE, W = () => window.WALLET, X = () => window.EXEC;
 const K = "neon.meme";
 const DEF = { mode: "SIM", dep: 1, autoStart: false, base: 0.05, maxTrade: 0.1, budget: 0.5, dailyLoss: 0.25, maxPos: 3, tp: 50, sl: 25, trail: 15, holdMin: 15, slip: 20, prio: 0.0005,
-  w: { on: true, minInit: 0.3, minMcap: 27, maxMcap: 70, needSoc: true, maxDev: 10, maxRisk: 45, waitSec: 20, minMom: 8 },
+  w: { on: true, minInit: 0.15, minMcap: 15, maxMcap: 120, needSoc: true, maxDev: 16, maxRisk: 58, waitSec: 15, minMom: 3 },
   cp: { on: true, minSrc: 0.3, maxMcap: 300, follow: true, cool: 120, max10: 3, sizeMode: "fixed", ratio: 0.1 },
   rules: { half: true, pause2: true, pauseMin: 60, upHigh: true },
   gk: { gate: false, timeout: 2500, fallback: "rules" } };
 const deep = (a, b) => { const o = Object.assign({}, a); for (const k in b) o[k] = (a[k] && typeof a[k] === "object" && !Array.isArray(a[k])) ? Object.assign({}, a[k], b[k] || {}) : b[k]; return o; };
 let C = deep(DEF, (() => { try { return JSON.parse(localStorage.getItem(K) || "{}"); } catch(e){ return {}; } })());
 const save = () => localStorage.setItem(K, JSON.stringify(C));
+/* v7.3: one-time move to the looser watcher filters (risk limits untouched) */
+if ((C.fv|0) < 2){ Object.assign(C.w, { minInit: 0.15, minMcap: 15, maxMcap: 120, maxDev: 16, maxRisk: 58, waitSec: 15, minMom: 3 }); C.fv = 2; try { save(); } catch(e){} }
 const RANGE = { base: [0.001, 1], maxTrade: [0.001, 2], budget: [0.01, 20], dailyLoss: [0.005, 20], maxPos: [1, 10], tp: [5, 1000], sl: [3, 90], trail: [0, 80], holdMin: [1, 1440], slip: [1, 50], prio: [0, 0.005], dep: [0.01, 1000],
   "w.minInit": [0, 50], "w.minMcap": [0, 1000], "w.maxMcap": [1, 5000], "w.maxDev": [0, 100], "w.maxRisk": [0, 100], "w.waitSec": [3, 600], "w.minMom": [-50, 500],
   "cp.minSrc": [0, 100], "cp.maxMcap": [1, 10000], "cp.cool": [0, 3600], "cp.max10": [1, 50], "cp.ratio": [0.001, 10], "rules.pauseMin": [1, 1440], "gk.timeout": [500, 15000] };
