@@ -28,7 +28,11 @@ const BOOL = new Set(["w.on", "w.needSoc", "cp.on", "cp.follow", "rules.half", "
 const getP = p => p.split(".").reduce((o, k) => o && o[k], C);
 function setP(p, v){ if (BOOL.has(p)) v = v === true || v === "true" || v === 1; else if (p === "cp.sizeMode") { if (!["fixed", "ratio"].includes(v)) throw new Error("sizeMode fixed|ratio"); } else if (p === "gk.fallback") { if (!["rules", "deny"].includes(v)) throw new Error("fallback rules|deny"); }
   else { const r = RANGE[p]; if (!r) throw new Error("bilinmeyen ayar: " + p); v = +String(v).replace(",", "."); if (!(v >= r[0] && v <= r[1])) throw new Error(`${p} ${r[0]}–${r[1]} olmalı`); }
-  const ks = p.split("."); let o = C; while (ks.length > 1) o = o[ks.shift()]; o[ks[0]] = v; save(); return v; }
+  const ks = p.split("."); let o = C; while (ks.length > 1) o = o[ks.shift()]; o[ks[0]] = v; save(); ruleApply(p); return v; }
+function ruleApply(p){ if (typeof R === "undefined" || !(R.pauseUntil > Date.now())) return;
+  if (p === "rules.pause2" && !C.rules.pause2){ R.pauseUntil = 0; R.consec = 0; rSave(); tl("risk", "◆ RİSK: ara kuralı kapatıldı → ara bitti", "up"); }
+  else if (p === "rules.pauseMin"){ R.pauseUntil = (R.pauseAt || Date.now()) + C.rules.pauseMin*60000; if (R.pauseUntil <= Date.now()){ R.pauseUntil = 0; tl("risk", `◆ RİSK: ara süresi ${C.rules.pauseMin} dk → ara bitti`, "up"); } else tl("risk", `◆ RİSK: ara süresi ${C.rules.pauseMin} dk → ${tm(R.pauseUntil)}'e kadar`, "y"); rSave(); } }
+function endPause(){ R.pauseUntil = 0; R.consec = 0; rSave(); tl("risk", "◆ RİSK: ara elle bitirildi", "up"); paint(true); }
 /* ------------------------- SIM account ------------------------- */
 const SK = "neon.sim";
 const simNew = dep => ({ dep, cash: dep, pos: [], start: Date.now(), n: 0 });
@@ -88,7 +92,7 @@ function riskCheck(size, mint){ const now = Date.now();
   if (isReal() && !W().unlocked()) return "BOT CÜZDANI kilitli";
   return null; }
 function riskOnClose(pnl){ if (pnl < 0){ R.losses++; R.consec++; if (C.rules.half && R.mult > 0.25){ R.mult = Math.max(0.25, (R.mult || 1)/2); tl("risk", `◆ RİSK: kayıp sonrası boyut yarıya → <b>${R.mult}x</b>`, "y"); mark("risk", "", 0); }
-    if (C.rules.pause2 && R.consec >= 2){ R.pauseUntil = Date.now() + C.rules.pauseMin*60000; R.consec = 0; tl("risk", `◆ RİSK: 2 kayıp üst üste → <b>${C.rules.pauseMin} dk ara</b> (${tm(R.pauseUntil)}'e kadar)`, "dn"); mark("risk", "", 0); NOTIFY.ping("bad", `RİSK: ${C.rules.pauseMin} dk ara`); } }
+    if (C.rules.pause2 && R.consec >= 2){ R.pauseAt = Date.now(); R.pauseUntil = R.pauseAt + C.rules.pauseMin*60000; R.consec = 0; tl("risk", `◆ RİSK: 2 kayıp üst üste → <b>${C.rules.pauseMin} dk ara</b> (${tm(R.pauseUntil)}'e kadar)`, "dn"); mark("risk", "", 0); NOTIFY.ping("bad", `RİSK: ${C.rules.pauseMin} dk ara`); } }
   else { R.wins++; R.consec = 0; const e = equity(); if (e !== null && (R.eqHigh === null || e > R.eqHigh + 1e-9)){ R.eqHigh = e; if (R.mult < 1){ R.mult = C.rules.upHigh ? Math.min(1, R.mult*2) : 1; tl("risk", `◆ RİSK: yeni hesap zirvesi ${fmt(e, 4)} SOL → boyut <b>${R.mult}x</b>`, "up"); } }
     else if (!C.rules.upHigh) R.mult = 1; }
   rSave(); }
@@ -246,7 +250,7 @@ function applySuggestion(a){ try {
   if (a.type === "sell"){ manual(a.mint, "sell", { src: "grok" }); return "ONAY ekranı açıldı"; }
   if (a.type === "track"){ COPY.add(a.wallet, a.label); paintWallets(); return "✔ takibe alındı"; }
   if (a.type === "untrack"){ COPY.del(a.wallet); paintWallets(); return "✔ takipten çıkarıldı"; }
-  if (a.type === "pause"){ const m = Math.max(1, Math.min(1440, +a.min || 30)); R.pauseUntil = Date.now() + m*60000; rSave(); tl("risk", `GROK önerisi: ${m} dk ara`, "y"); return `✔ ${m} dk ara`; }
+  if (a.type === "pause"){ const m = Math.max(1, Math.min(1440, +a.min || 30)); R.pauseAt = Date.now(); R.pauseUntil = R.pauseAt + m*60000; rSave(); tl("risk", `GROK önerisi: ${m} dk ara`, "y"); return `✔ ${m} dk ara`; }
   if (a.type === "stop"){ stop("GROK önerisi (onaylandı)"); return "✔ OTO durdu"; }
   throw new Error("bilinmeyen öneri türü: " + a.type); } catch(e){ return "✖ " + e.message; } }
 /* ------------------------- UI ------------------------- */
@@ -352,7 +356,7 @@ let agQ = false; const paintAgentsQ = () => { if (agQ) return; agQ = true; setTi
 function paintLadder(){ const el = $("#mm-lad"); if (!el) return; const lv = [1, 0.5, 0.25], dl = Math.max(0, -todayPnl()), used = Math.min(1, dl/C.dailyLoss), paused = R.pauseUntil > Date.now();
   el.innerHTML = `<div class="rungs">${lv.map(x => `<div class="rung ${R.mult === x ? "on" : ""}"><b>${x}x</b><span>${fmt(Math.min(C.maxTrade, C.base*x), 3)} SOL</span><small>${x === 1 ? "tam · yalnızca yeni zirvede" : x === 0.5 ? "1 kayıp sonrası" : "art arda kayıp"}</small></div>`).join("")}</div>
     <div class="lad-r"><div><small>GÜNLÜK ZARAR LİMİTİ</small><div class="bar"><div style="width:${(used*100).toFixed(0)}%" class="${used > .7 ? "r" : used > .4 ? "y" : ""}"></div></div><span>${fmt(dl, 3)} / ${C.dailyLoss} SOL</span></div>
-    <div><small>ARDIŞIK KAYIP</small><div class="dots">${[0, 1].map(i => `<i class="${R.consec > i ? "on" : ""}"></i>`).join("")}</div><span>${paused ? "⏸ " + Math.ceil((R.pauseUntil - Date.now())/60000) + " dk ara" : "2 kayıp = " + C.rules.pauseMin + " dk ara"}</span></div>
+    <div><small>ARDIŞIK KAYIP</small><div class="dots">${[0, 1].map(i => `<i class="${R.consec > i ? "on" : ""}"></i>`).join("")}</div><span>${paused ? "⏸ " + Math.ceil((R.pauseUntil - Date.now())/60000) + " dk ara <button class=\"mini\" onclick=\"MEME.endPause()\">ARAYI BİTİR</button>" : "2 kayıp = " + C.rules.pauseMin + " dk ara"}</span></div>
     <div><small>BÜTÇE KULLANIMI</small><div class="bar"><div style="width:${Math.min(100, deployed()/C.budget*100).toFixed(0)}%"></div></div><span>${fmt(deployed(), 3)} / ${C.budget} SOL</span></div></div>`; }
 function paintLat(){ const el = $("#mm-lat"); if (!el) return; const L = X().lat.slice(0, 8);
   el.innerHTML = L.length ? `<div class="lat-h"><span>saat</span><span>işlem</span><span>olay→gön.</span><span>gön.→onay</span><span>yol</span></div>` + L.map(m => `<div class="${m.ok ? "" : "dn"}"><span>${tm(m.t)}</span><span>${m.side === "buy" ? "▲" : "▼"} ${esc((m.sym || "").slice(0, 7))}${m.pre ? "*" : ""}</span><span>${ms(m.ev2sent)}</span><span>${m.ok ? ms(m.sent2conf) : "✖"}</span><span>${esc(m.ok ? (m.confVia ? m.via + "/" + m.confVia : m.via + (m.dry ? "·ölçüm" : "")) : (m.err || "").slice(0, 22))}</span></div>`).join("")
@@ -422,6 +426,6 @@ for (const p of posList()) monitor(p.mint);
 if (isReal()){ realBal(true); X().keepWarm(true); }
 if (C.autoStart){ if (!isReal()) setTimeout(() => arm(true).then(ok => ok && NOTIFY.toast("otomatik başlat: OTO açıldı (SIM)", "good")), 1500);
   else { const iv = setInterval(() => { if (ST.on || !C.autoStart || C.mode !== "GERÇEK"){ clearInterval(iv); return; } if (W().unlocked()){ clearInterval(iv); arm(true).then(ok => ok && NOTIFY.ping("bad", "otomatik başlat: GERÇEK OTO açıldı")); } }, 2000); } }
-return { get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList };
+return { get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, endPause, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList };
 })();
 window.MEME = MEME;
