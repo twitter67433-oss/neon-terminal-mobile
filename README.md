@@ -141,3 +141,7 @@ Analiz yöntemi (tarayıcı kuralları, açılış aralığı girişi, çıkış
 Grafikler [TradingView Lightweight Charts™](https://github.com/tradingview/lightweight-charts) (Apache-2.0) ile çizilir; QR kodu qrcode-generator (MIT); kütüphaneler `vendor/` klasöründe yerel olarak bulunur. Veri: Binance, PumpPortal, Solana RPC (publicnode / Tatum), IPFS ağ geçitleri, Jupiter, CoinGecko. Yazı tipleri: Orbitron, Share Tech Mono, JetBrains Mono (SIL Open Font License).
 
 Bu depo MIT Lisansı ile yayımlanır — bkz. [LICENSE](LICENSE).
+
+## v7 · SUNUCU — 7/24 bot + telefondan uzaktan kumanda
+
+MEME botu telefonun kapalıyken de çalışsın diye aynı motor her zaman açık bir Linux makinede headless Chrome içinde çalışır (`server/`, bkz. [server/README.md](server/README.md)). Telefonda ⚡ MEME → 🖥 SUNUCU bölümüne eşleşme linkiyle bağlanınca MEME ekranı sunucudaki botu gösterir ve yönetir; telefondaki yerel motor işlem yapmaz. Bot cüzdanı yalnızca PIN ile şifreli kayıt olarak gönderilir, PIN yalnızca sunucu belleğinde tutulur.

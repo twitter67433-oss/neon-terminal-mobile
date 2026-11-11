@@ -203,7 +203,16 @@ window.addEventListener("pagehide", () => { kp = null; });
 function sign(tx){ if (!kp) throw new Error("bot cüzdanı kilitli (PIN ile aç)");
   if (tx.version !== undefined){ const payer = tx.message.staticAccountKeys[0].toBase58(); if (payer !== kp.publicKey.toBase58()) throw new Error("işlem bot cüzdanı için hazırlanmamış (" + short(payer) + ")"); tx.sign([kp]); }
   else tx.sign(kp); return tx; }
-return { render, html, bind, exists: () => !!rec(), unlocked: () => !!kp, pub, sign, b58: b58enc, get kpPub(){ return kp ? kp.publicKey : null; }, solBal, tokenBal, signSendVersioned, recordTrade, pos, paintBal, solPrice, get solUsd(){ return solUsd; },
+/* v7 SUNUCU: move the ENCRYPTED wallet record (never the plaintext key) between the phone and the server bot */
+function blob(){ const o = rec(); return o ? { v: o.v, kdf: o.kdf, iter: o.iter, salt: o.salt, iv: o.iv, ct: o.ct, pub: o.pub, created: o.created } : null; }
+function importBlob(o, replace){ if (!o || o.v !== 1 || !o.salt || !o.iv || !o.ct || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(o.pub || "")) throw new Error("geçersiz şifreli cüzdan kaydı");
+  if (!(+o.iter >= 100000 && +o.iter <= 5000000)) throw new Error("geçersiz iter"); const cur = rec();
+  if ((window.MEME && MEME.on && MEME.mode === "GERÇEK") || (window.AUTO && AUTO.pumpOn())) throw new Error("OTO açıkken cüzdan değiştirilemez — önce durdur");
+  if (cur && cur.pub !== o.pub){ if (!replace) throw new Error("sunucuda başka bir cüzdan var (" + short(cur.pub) + ")"); if (pos.list().length) throw new Error("eski cüzdanın açık pozisyonu var"); }
+  kp = null; localStorage.setItem(K, JSON.stringify({ v: 1, kdf: o.kdf || "PBKDF2-SHA256", iter: +o.iter, salt: o.salt, iv: o.iv, ct: o.ct, pub: o.pub, created: o.created || Date.now(), imported: Date.now() })); return o.pub; }
+function removeWallet(){ if ((window.MEME && MEME.on && MEME.mode === "GERÇEK") || (window.AUTO && AUTO.pumpOn())) throw new Error("OTO açıkken silinemez"); if (window.MEME && MEME.mode === "GERÇEK") throw new Error("önce SIM moduna geç");
+  if (pos.list().length) throw new Error("açık bot pozisyonu var"); localStorage.removeItem(K); kp = null; return true; }
+return { render, html, bind, exists: () => !!rec(), unlocked: () => !!kp, blob, importBlob, removeWallet, unlock, lock, pub, sign, b58: b58enc, get kpPub(){ return kp ? kp.publicKey : null; }, solBal, tokenBal, signSendVersioned, recordTrade, pos, paintBal, solPrice, get solUsd(){ return solUsd; },
   _t: { encrypt, decrypt, b58enc, b58dec, create, unlock, lock, exportSecret, restore,
     /* test hook: sign a server-built tx with the bot key WITHOUT sending it */
     async signOnly(bytes){ if (!kp) throw new Error("kilitli"); const W = await W3(); const tx = W.VersionedTransaction.deserialize(bytes); const payer = tx.message.staticAccountKeys[0].toBase58(); tx.sign([kp]); return { payer, sigs: tx.signatures.length, signed: !tx.signatures[0].every(x => x === 0), len: tx.serialize().length }; } } };

@@ -95,3 +95,10 @@ body.meme-on #nav button[data-go="meme"]::after{content:" ●";color:#ff2bd6}
 @media (max-width:760px){ #nav{margin:6px 8px 0} .mm-big span{font-size:38px} .ladder{grid-template-columns:104px 1fr} }
 @media (min-width:900px){ #meme,#grok{max-width:980px;margin-left:auto;margin-right:auto} .ags{grid-template-columns:repeat(4,1fr)} .mm-hero{height:260px} }
 @media (prefers-reduced-motion: reduce){ .ag.live::after,.arm.on,.dots3 i{animation:none!important} }
+
+/* v7 SUNUCU */
+.sv-st{font-family:var(--tech);font-size:12px;padding:8px 10px;border-radius:10px;border:1px solid #1d4256;margin-bottom:8px;display:flex;flex-direction:column;gap:2px}
+.sv-st small{color:var(--dim);font-size:10px}.sv-st.ok{border-color:#39ff14;color:#39ff14;box-shadow:0 0 12px #39ff1433}.sv-st.bad{border-color:#ff3355;color:#ff8899}.sv-st.wait{color:#ffe600;border-color:#ffe60088}
+.sv-banner{font-family:var(--disp);font-size:11px;letter-spacing:1px;text-align:center;padding:6px;border-radius:10px;margin-bottom:8px;border:1px solid #00f0ff;color:#00f0ff;background:rgba(0,240,255,.06)}
+.sv-banner.ok{border-color:#39ff14;color:#39ff14}.sv-banner.bad{border-color:#ff3355;color:#ff8899;background:rgba(255,51,85,.08)}.sv-banner small{display:block;font-family:var(--tech);font-size:10px;letter-spacing:0;color:var(--dim)}
+.rm-hero{height:150px}.rm-err{max-height:140px}

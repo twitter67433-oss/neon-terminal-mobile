@@ -54,6 +54,8 @@ const TAPE = []; function tape(x){ TAPE.unshift(Object.assign({ t: Date.now() },
 /* ------------------------- runtime state ------------------------- */
 const ST = { on: false, wake: null, cands: new Map(), mons: new Map(), busy: new Set(), buying: 0, curves: new Map(), cpLog: new Map(), lastCopy: null, seen: 0, passed: 0, entered: 0, wLast: "", gk: { n: 0, yes: 0, no: 0, to: 0, last: null }, real: { bal: null, at: 0 }, orb: 0 };
 const isReal = () => C.mode === "GERÇEK";
+const SRV = !!window.NEON_SRV; /* true inside the always-on server bot (server/server.mjs) */
+const RMT = () => !SRV && !!(window.REMOTE && REMOTE.paired()); /* phone paired with the server bot: local engine stays idle, UI mirrors the server */
 const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return +d; };
 const walletTag = () => isReal() ? "BOT" : "SIM";
 const todayPnl = () => JOURNAL.todayPnl("SOL", e => e.venue === "pump.fun" && e.wallet === walletTag());
@@ -196,7 +198,7 @@ function riskSheet(){ return new Promise(res => { $("#cf-box").innerHTML = sheet
     const box = $("#confirm"); box.classList.remove("hidden"); const ok = $("#cf-ok"); $("#rk-ok").onchange = e => ok.disabled = !e.target.checked;
     const done = v => { box.classList.add("hidden"); $("#cf-box").innerHTML = ""; res(v); }; $("#cf-no").onclick = () => done(false); ok.onclick = () => done(true); }); }
 function limitsErr(){ const e = []; if (C.maxTrade < C.base) e.push("işlem başı max ≥ temel boyut olmalı"); if (C.budget < C.base) e.push("bütçe ≥ temel boyut"); if (C.dailyLoss > C.budget) e.push("günlük max zarar ≤ bütçe"); if (!C.w.on && !C.cp.on) e.push("en az bir ajan (İzleyici ya da Kopyacı) açık olmalı"); return e; }
-async function arm(silent){ if (ST.on) return true; const e = limitsErr(); if (e.length){ NOTIFY.toast("✖ " + e.join("; "), "bad"); return false; }
+async function arm(silent){ if (ST.on) return true; if (RMT()){ if (!silent) NOTIFY.toast("SUNUCU eşli: OTO sunucuda çalışır — telefonda yerel OTO başlatılmaz", "bad"); return false; } const e = limitsErr(); if (e.length){ NOTIFY.toast("✖ " + e.join("; "), "bad"); return false; }
   if (isReal()){ if (!W().exists()){ NOTIFY.toast("✖ GERÇEK mod için önce BOT CÜZDANI oluştur (CÜZDAN sekmesi)", "bad"); return false; } if (!W().unlocked()){ NOTIFY.toast("✖ BOT CÜZDANI kilitli — CÜZDAN sekmesinde PIN ile aç", "bad"); return false; }
     if (!silent){ if (!C.acceptedReal){ if (!(await riskSheet())) return false; C.acceptedReal = true; save(); }
       if (!(await T().confirmSheet({ title: "GERÇEK OTO AL-SAT'I BAŞLAT", mode: "GERÇEK", rows: [["Cüzdan", "BOT " + short(W().pub())], ["Temel boyut", C.base + " SOL × risk çarpanı " + R.mult + "x"], ["İşlem başı max", C.maxTrade + " SOL"], ["Toplam bütçe", C.budget + " SOL"], ["Günlük max zarar", C.dailyLoss + " SOL", "dn"], ["Max açık pozisyon", String(C.maxPos)], ["Çıkış", `+%${C.tp} / −%${C.sl} / iz %${C.trail} / ${C.holdMin} dk`], ["Ajanlar", `İzleyici ${C.w.on ? "açık" : "kapalı"} · Kopyacı ${C.cp.on ? COPY.list.filter(w => w.on !== false).length + " cüzdan" : "kapalı"}${C.gk.gate ? " · GROK onayı" : ""}`]], warn: "Bundan sonra bot bu limitler içinde <b>onay sormadan</b> alıp satar. ■ HEPSİNİ DURDUR her zaman ekranda.", okText: "ONAYLA · OTO BAŞLAT" }))) return false; } }
@@ -206,8 +208,8 @@ async function arm(silent){ if (ST.on) return true; const e = limitsErr(); if (e
 function stop(reason){ if (!ST.on) return; ST.on = false; for (const [m, c] of ST.cands){ clearInterval(c.iv); unwatchCurve(m); } ST.cands.clear(); if (!isReal()) X().keepWarm(false); wake(false);
   tl("stop", `■ OTO DURDU: ${esc(reason || "elle")}`, "dn"); if (reason && reason !== "elle kapatıldı") NOTIFY.ping("bad", "OTO durdu: " + reason); afterToggle(); }
 function afterToggle(){ document.body.classList.toggle("meme-on", ST.on); fab(); paint(true); }
-function fab(){ const f = $("#killfab"); if (f) f.classList.toggle("hidden", !(ST.on || (window.AUTO && (AUTO.bnOn() || AUTO.pumpOn())))); }
-async function kill(){ const L = posList(); const r = await new Promise(res => { $("#cf-box").innerHTML = sheetHTML("■ HEPSİNİ DURDUR", "TÜM OTOMATİK İŞLEMLERİ DURDUR", `<div class="cf-warn">MEME OTO (izleyici + kopyacı) ve Binance OTO hemen kapanır.</div><label class="chk"><input type="checkbox" id="k-sell" ${L.length ? "" : "disabled"}> ${L.length} ${C.mode} pozisyonunu da piyasadan SAT</label>`, "DURDUR");
+function fab(){ const f = $("#killfab"); if (f) f.classList.toggle("hidden", !(ST.on || (RMT() && REMOTE.on()) || (window.AUTO && (AUTO.bnOn() || AUTO.pumpOn())))); }
+async function kill(){ if (RMT()) return REMOTE.kill(); const L = posList(); const r = await new Promise(res => { $("#cf-box").innerHTML = sheetHTML("■ HEPSİNİ DURDUR", "TÜM OTOMATİK İŞLEMLERİ DURDUR", `<div class="cf-warn">MEME OTO (izleyici + kopyacı) ve Binance OTO hemen kapanır.</div><label class="chk"><input type="checkbox" id="k-sell" ${L.length ? "" : "disabled"}> ${L.length} ${C.mode} pozisyonunu da piyasadan SAT</label>`, "DURDUR");
     const box = $("#confirm"); box.classList.remove("hidden"); const done = v => { const s = $("#k-sell"); const o = v && { s: s && s.checked }; box.classList.add("hidden"); $("#cf-box").innerHTML = ""; res(o); };
     $("#cf-no").onclick = () => done(null); $("#cf-ok").onclick = () => done(true); });
   if (!r) return; stop("HEPSİNİ DURDUR"); if (window.AUTO) AUTO.kill(false);
@@ -215,12 +217,16 @@ async function kill(){ const L = posList(); const r = await new Promise(res => {
 async function setMode(m){ if (m === C.mode) return; if (ST.on){ NOTIFY.toast("Önce OTO'yu durdur", "bad"); return; }
   if (m === "GERÇEK"){ if (!W().exists()){ NOTIFY.toast("GERÇEK mod için önce CÜZDAN sekmesinden BOT CÜZDANI oluştur", "bad"); return; }
     if (!(await CONN.typedConfirm("GERÇEK MODA GEÇ", "Bundan sonra MEME motoru (oto ve elle) <b>BOT CÜZDANI'ndaki gerçek SOL</b> ile işlem yapar. SIM hesabın ve geçmişin saklanır.", "GERÇEK"))) return; }
+  modeNow(m); }
+function modeNow(m){ if (m === C.mode) return; if (ST.on) throw new Error("önce OTO'yu durdur"); if (m !== "SIM" && m !== "GERÇEK") throw new Error("mod SIM|GERÇEK"); if (m === "GERÇEK" && !W().exists()) throw new Error("sunucuda BOT CÜZDANI yok");
   for (const mint of [...ST.mons.keys()]) stopMon(mint); eqSave(); C.mode = m; save(); R = rLoad(m);
   try { EQ = JSON.parse(localStorage.getItem(EK(m)) || "[]"); MK = JSON.parse(localStorage.getItem(EK(m) + ".mk") || "[]"); } catch(e){ EQ = []; MK = []; }
   if (m === "GERÇEK"){ realBal(true).then(() => paint(true)); X().keepWarm(true); } else X().keepWarm(false); for (const p of posList()) monitor(p.mint);
   tl("mode", `MOD → <b>${m}</b>`, m === "GERÇEK" ? "dn" : "y"); render(); }
 async function simReset(){ if (ST.on && !isReal()){ NOTIFY.toast("Önce OTO'yu durdur", "bad"); return; }
   if (!(await CONN.typedConfirm("SIM HESABINI SIFIRLA", `SIM bakiyesi <b>${C.dep} SOL</b> sanal yatırıma döner; SIM pozisyonları, SIM eğrisi ve SIM risk durumu silinir (günlükteki SIM kayıtları kalır).`, "SIFIRLA"))) return;
+  simResetNow(); }
+function simResetNow(){ if (ST.on && !isReal()) throw new Error("önce OTO'yu durdur");
   for (const p of SIM.pos) stopMon(p.mint); SIM = simNew(C.dep); simSave(); localStorage.removeItem(RK("SIM")); localStorage.removeItem(EK("SIM")); localStorage.removeItem(EK("SIM") + ".mk");
   if (!isReal()){ R = rLoad("SIM"); EQ = []; MK = []; } tl("mode", `SIM sıfırlandı · sanal yatırım ${C.dep} SOL`, "y"); render(); }
 /* manual trade through the engine (always ONAYLA) */
@@ -235,7 +241,7 @@ async function manual(mint, action, opt = {}){ const t = PUMP.get(mint), sym = (
 /* ------------------------- context for GROK ------------------------- */
 function gateInfo(o){ const t = PUMP.get(o.mint) || {}, m = t.meta || {}; const c = curveOf(o.mint) || o.c0 || {};
   return { sym: o.sym, name: t.name, mint: o.mint, src: o.src, copiedWallet: o.wallet ? lab(o.wallet) : null, walletBuySol: o.srcSol, mcapSol: c.mcap ? +c.mcap.toFixed(1) : null, ageSec: t.at ? Math.round((Date.now() - t.at)/1000) : null, devPct: t.devPct ? +t.devPct.toFixed(1) : null, devSol: t.devSol, rug: t.risk, rugFactors: (t.riskF || []).map(f => f[1]).slice(0, 5), socials: { x: !!m.tw, tg: !!m.tg, web: !!m.web }, desc: (m.desc || "").slice(0, 160) }; }
-function context(){ const e = equity(), d = depBase(); const J = JOURNAL.list().filter(x => x.venue === "pump.fun" && x.wallet === walletTag()).slice(-12); const s = X().stats();
+function context(){ if (RMT() && REMOTE.ctx()) return REMOTE.ctx(); const e = equity(), d = depBase(); const J = JOURNAL.list().filter(x => x.venue === "pump.fun" && x.wallet === walletTag()).slice(-12); const s = X().stats();
   const sel = PUMP._S.sel; return { time: new Date().toLocaleString("tr-TR", { timeZone: TZ }), mode: C.mode, autoOn: ST.on, equitySol: e && +e.toFixed(4), depositSol: d, sinceDepositPct: e && d ? +((e/d - 1)*100).toFixed(2) : null, todayPnlSol: +todayPnl().toFixed(4), solUsd: PUMP.solUsd,
     risk: { mult: R.mult, consecLoss: R.consec, pausedUntil: R.pauseUntil > Date.now() ? tm(R.pauseUntil) : null, equityHigh: R.eqHigh, wins: R.wins, losses: R.losses },
     settings: { base: C.base, maxTrade: C.maxTrade, budget: C.budget, dailyLoss: C.dailyLoss, maxPos: C.maxPos, tp: C.tp, sl: C.sl, trail: C.trail, holdMin: C.holdMin, slip: C.slip, prio: C.prio, w: C.w, cp: C.cp, rules: C.rules, gk: C.gk },
@@ -244,7 +250,7 @@ function context(){ const e = equity(), d = depBase(); const J = JOURNAL.list().
     trackedWallets: COPY.list.map(w => { const st = COPY.stat(w.addr); return { label: w.label, addr: w.addr, on: w.on !== false, sessionTrades: st.n, buys: st.buys, sells: st.sells, solIn: +st.solIn.toFixed(3), solOut: +st.solOut.toFixed(3) }; }),
     agents: { watcherSeen: ST.seen, watcherPassed: ST.passed, candidates: ST.cands.size, entered: ST.entered, avgEventToSentMs: s.ev2sent && Math.round(s.ev2sent), avgSentToConfMs: s.sent2conf && Math.round(s.sent2conf), execFails: s.fail },
     newTokensPerMin: PUMP._S.rate.length, selectedToken: sel ? gateInfo({ mint: sel.mint, sym: sel.symbol, src: "seçili" }) : null }; }
-function applySuggestion(a){ try {
+function applySuggestion(a){ if (RMT()) return REMOTE.apply(a); try {
   if (a.type === "set"){ const v = setP(a.key, a.value); tl("grok", `GROK önerisi uygulandı: <b>${esc(a.key)}</b> = ${esc(v)}`, "y"); render(); return `✔ ${a.key} = ${v}`; }
   if (a.type === "buy"){ if (!a.mint || !COPY.valid(a.mint)) throw new Error("geçersiz mint"); manual(a.mint, "buy", { sol: Math.min(+a.sol || C.base, C.maxTrade), src: "grok" }); return "ONAY ekranı açıldı"; }
   if (a.type === "sell"){ manual(a.mint, "sell", { src: "grok" }); return "ONAY ekranı açıldı"; }
@@ -323,7 +329,7 @@ function bind(){ const box = $("#meme-box");
   $("#mm-probe").onclick = async () => { const b = $("#mm-probe"), el = $("#mm-probe-res"); b.disabled = true; el.innerHTML = `<div class="empty">ölçülüyor…</div>`; const mint = (PUMP._S.feed[0] || {}).mint;
     const r = await X().probe(mint); el.innerHTML = r.map(([k, v, ok]) => `<div><span>${esc(k)}</span><b class="${ok ? "" : "dn"}">${ok ? ms(v) : "✖"}</b></div>`).join(""); b.disabled = false; };
   paint(true); }
-function render(){ const box = $("#meme-box"); if (!box) return; box.innerHTML = html(); bind(); orbInit(); }
+function render(){ const box = $("#meme-box"); if (!box) return; if (RMT()){ orbRaf && cancelAnimationFrame(orbRaf); orbRaf = 0; return REMOTE.render(); } box.innerHTML = html(); bind(); orbInit(); }
 /* ---- dynamic painting ---- */
 let lastFull = 0;
 function paint(full){ if (document.hidden) return; if (!$("#mm-eq")) return; const e = equity(), d = depBase(), su = PUMP.solUsd;
@@ -414,6 +420,38 @@ function orbFrame(t){ orbRaf = 0; const c = $("#orb"); if (!c || !orbPts || docu
   g.strokeStyle = `rgba(${hue},.35)`; g.lineWidth = 1; for (let i = 0; i < 2; i++){ g.beginPath(); g.ellipse(cx, cy, R0*(1.25 + i*0.18), R0*(0.3 + i*0.06), (RMq.matches ? 0 : T)*(i ? -0.3 : 0.2), 0, 6.283); g.stroke(); }
   g.globalCompositeOperation = "source-over"; if (!RMq.matches || orbE > 0.02) orbRaf = requestAnimationFrame(orbFrame); }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !orbRaf && orbPts) orbRaf = requestAnimationFrame(orbFrame); });
+/* ------------------------- v7 SUNUCU: snapshot + control (used by server/server.mjs through page.evaluate) ------------------------- */
+const r4 = x => x === null || x === undefined || !isFinite(x) ? null : +(+x).toFixed(6);
+function snap(){ const e = equity(), d = depBase(), s = X().stats(), J = JOURNAL.list().filter(x => x.venue === "pump.fun" && x.wallet === walletTag() && typeof x.pnl === "number");
+  const P = EQ.slice(-720), step = Math.max(1, Math.ceil(P.length/240)), eq = P.filter((_, i) => i % step === 0 || i === P.length - 1);
+  return { t: Date.now(), mode: C.mode, on: ST.on, autoStart: !!C.autoStart, equity: r4(e), cash: r4(cashNow()), dep: r4(d), solUsd: PUMP.solUsd || null, today: r4(todayPnl()), trades: J.length, wins: J.filter(x => x.pnl > 0).length,
+    pos: posList().map(p => { const mo = ST.mons.get(p.mint) || {}; return { mint: p.mint, sym: p.sym, src: p.src, w: p.wallet ? lab(p.wallet) : null, solIn: r4(p.solIn), tokens: p.tokens, est: !!p.estTok, t: p.t, val: r4(mo.val), pnl: mo.pnl === null || mo.pnl === undefined ? null : +mo.pnl.toFixed(2), hi: mo.hi === null || mo.hi === undefined ? null : +mo.hi.toFixed(2), mcap: r4(mo.mcap) }; }),
+    deployed: r4(deployed()), risk: { mult: R.mult, consec: R.consec, pauseUntil: R.pauseUntil > Date.now() ? R.pauseUntil : 0, eqHigh: r4(R.eqHigh), wins: R.wins, losses: R.losses, next: r4(riskSize("watcher")) },
+    C: JSON.parse(JSON.stringify(C)), agents: { seen: ST.seen, passed: ST.passed, cands: ST.cands.size, entered: ST.entered, wLast: ST.wLast, rate: PUMP._S.rate.length, pumpLive: !!PUMP.live,
+      cp: { live: !!COPY.live, subs: COPY.subs, poll: !!(COPY.poll && COPY.poll.on), last: ST.lastCopy ? { sym: ST.lastCopy.sym, w: lab(ST.lastCopy.w), at: ST.lastCopy.at } : null, skip: ST.cpSkip || "", list: COPY.list.map(w => { const st = COPY.stat(w.addr); return { addr: w.addr, label: w.label, on: w.on !== false, n: st.n, buys: st.buys, sells: st.sells }; }) },
+      x: { ev2sent: r4(s.ev2sent), sent2conf: r4(s.sent2conf), conf: s.conf, fail: s.fail, pend: s.pend, bhAge: s.bhAge } },
+    lat: X().lat.slice(0, 8).map(m => ({ t: m.t, side: m.side, sym: m.sym, ev2sent: r4(m.ev2sent), sent2conf: r4(m.sent2conf), ok: m.ok, via: m.via, err: m.err })),
+    tl: TL.filter(x => x.k !== "watch").slice(0, 60), tape: TAPE.slice(0, 30), errs: TL.filter(x => x.k === "err" || x.k === "warn").slice(0, 10), eq, mk: MK.filter(m => eq.length && m.t >= eq[0][0]).slice(-80),
+    wallet: { exists: W().exists(), pub: W().pub(), unlocked: W().unlocked(), bal: r4(ST.real.bal) } }; }
+async function ctl(cmd, a = {}){ switch (cmd){
+  case "arm": { if (isReal() && !W().unlocked()) throw new Error("BOT CÜZDANI kilitli — önce PIN ile aç"); const e = limitsErr(); if (e.length) throw new Error(e.join("; ")); const ok = await arm(true); if (!ok) throw new Error("OTO başlatılamadı"); return "OTO açık"; }
+  case "stop": stop(a.why || "elle kapatıldı (telefon)"); return "OTO durdu";
+  case "kill": { stop("HEPSİNİ DURDUR (telefon)"); if (window.AUTO) AUTO.kill(false); let n = 0; if (a.sell) for (const p of posList().slice()){ await exit(p.mint, "HEPSİNİ DURDUR"); n++; } paint(true); return a.sell ? `durdu · ${n} pozisyon satıldı` : "durdu"; }
+  case "endPause": endPause(); return "ara bitti";
+  case "pause": { const m = Math.max(1, Math.min(1440, +a.min || 30)); R.pauseAt = Date.now(); R.pauseUntil = R.pauseAt + m*60000; rSave(); tl("risk", `◆ RİSK: telefondan ${m} dk ara`, "y"); return m + " dk ara"; }
+  case "set": { const v = setP(a.key, a.value); if (a.key === "dep" && !isReal() && !SIM.n && !SIM.pos.length){ SIM = simNew(C.dep); simSave(); } tl("set", `⚙ telefon: <b>${esc(a.key)}</b> = ${esc(v)}`, "dim"); paint(true); return v; }
+  case "autoStart": C.autoStart = !!a.on; save(); return C.autoStart;
+  case "sell": { if (!posGet(a.mint)) throw new Error("bu tokenda açık pozisyon yok"); const r = await exit(a.mint, a.why || "elle satış (telefon)"); if (!r) throw new Error("satış başarısız (zaman çizelgesine bak)"); return "satıldı"; }
+  case "mode": modeNow(a.mode); return C.mode;
+  case "simReset": simResetNow(); return "SIM sıfırlandı";
+  case "track": COPY.add(a.addr, a.label || ""); return "takibe alındı";
+  case "untrack": COPY.del(a.addr); return "takipten çıkarıldı";
+  case "wtoggle": COPY.toggle(a.addr, !!a.on); return a.on ? "açık" : "kapalı";
+  case "walletUpload": return W().importBlob(a.blob, !!a.replace);
+  case "walletUnlock": { const pub = await W().unlock(String(a.pin || "")); if (isReal()) realBal(true); return pub; }
+  case "walletLock": if (isReal() && ST.on) throw new Error("GERÇEK OTO açıkken kilitlenemez"); if (!W().lock()) throw new Error("kilitlenemedi"); return "kilitli";
+  case "walletRemove": W().removeWallet(); return "silindi";
+  default: throw new Error("bilinmeyen komut: " + cmd); } }
 /* ------------------------- boot ------------------------- */
 PUMP.onNew(t => { onNew(t); ST.orb = Math.max(ST.orb, 0.25); });
 COPY.on(onCopy);
@@ -426,6 +464,6 @@ for (const p of posList()) monitor(p.mint);
 if (isReal()){ realBal(true); X().keepWarm(true); }
 if (C.autoStart){ if (!isReal()) setTimeout(() => arm(true).then(ok => ok && NOTIFY.toast("otomatik başlat: OTO açıldı (SIM)", "good")), 1500);
   else { const iv = setInterval(() => { if (ST.on || !C.autoStart || C.mode !== "GERÇEK"){ clearInterval(iv); return; } if (W().unlocked()){ clearInterval(iv); arm(true).then(ok => ok && NOTIFY.ping("bad", "otomatik başlat: GERÇEK OTO açıldı")); } }, 2000); } }
-return { get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, endPause, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList };
+return { snap, ctl, get remote(){ return RMT(); }, get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, endPause, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList };
 })();
 window.MEME = MEME;

@@ -1,0 +1,10 @@
+{
+ "name": "neon-terminal-server",
+ "private": true,
+ "type": "module",
+ "description": "24/7 MEME bot server + remote-control API for Neon Terminal",
+ "dependencies": {
+  "playwright-core": "1.65.0",
+  "localtolink": "1.1.0"
+ }
+}
