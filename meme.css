@@ -184,3 +184,30 @@ body.mm-flash-loss::after{content:"";position:fixed;inset:0;background:rgba(255,
 .ags.compact .ag-b > div > span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ag-tag{font-style:normal;font-size:9.5px;border:1px solid rgba(255,43,214,.5);border-radius:3px;padding:0 3px;margin-right:3px;color:#ff9be8}
 
+/* v7.8 COIN ANALİZ */
+#coinan .can-search{display:flex;gap:8px}
+#coinan .can-search input{flex:1;min-width:0;text-transform:uppercase}
+.can-list{display:flex;flex-direction:column;max-height:260px;overflow:auto;border:1px solid rgba(0,240,255,.25);border-radius:8px;margin:6px 0;background:rgba(2,10,18,.96)}
+.can-list button{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;text-align:left;padding:9px 10px;background:none;border:0;border-bottom:1px dashed rgba(0,240,255,.12);color:inherit;font:inherit}
+.can-list button small{opacity:.6;font-size:10px}
+.can-tf{margin-top:8px;align-items:center}
+.can-tf #can-at{margin-left:auto;font-size:10px}
+.can-chart{height:300px;margin-top:6px;position:relative}
+.can-lg{flex-wrap:wrap}
+.can-v{margin-top:8px}
+.can-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.can-sym{font-size:16px;letter-spacing:1px}
+.can-verd{font-size:22px;font-weight:700;text-align:right;line-height:1;text-shadow:0 0 10px currentColor}
+.can-verd small{display:block;font-size:11px;font-weight:400;opacity:.85;text-shadow:none;margin-top:3px}
+.can-verd.y,.can-t .y{color:#ffe600}
+.can-plan,.can-kv{display:flex;flex-direction:column;gap:3px;margin:8px 0;font-size:12px}
+.can-plan div,.can-kv div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed rgba(0,240,255,.12);padding:3px 0}
+.can-plan span,.can-kv span{opacity:.75}
+.can-f{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;margin:6px 0}
+.can-note{font-size:10px}
+.can-t{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
+.can-t th,.can-t td{padding:4px 3px;text-align:left;border-bottom:1px dashed rgba(0,240,255,.12)}
+.can-t th{opacity:.6;font-weight:400}
+.can-wh{display:flex;flex-direction:column;gap:2px;font-size:11px;margin-top:6px}
+.can-btns{display:flex;gap:8px;margin-top:8px}
+.can-btns button:disabled{opacity:.4}
