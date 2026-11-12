@@ -161,11 +161,10 @@ body.mm-flash-loss::after{content:"";position:fixed;inset:0;background:rgba(255,
   .mm-pop{opacity:1;transform:translate(-50%,-50%)}
 }
 
-/* v7.4.1 — SIM $10k preset + serbest mod */
+/* v7.7 — SIM = GERÇEK bakiye button */
 .mm-simquick{display:flex;gap:8px;align-items:center;margin:-2px 0 10px;flex-wrap:wrap}
 .mm-simquick .mini{flex:0 0 auto;padding:8px 12px}
-.mm-simquick .chk{margin:0;font-size:11px}
-.mm-free-pill{color:#ffe600;border-color:#ffe600;text-shadow:0 0 8px #ffe60088}
+.mm-simnote{font-size:11px;opacity:.75;flex:1 1 160px}
 
 /* v7.5 score stats */
 .mm-scst{display:flex;flex-direction:column;gap:4px;margin-top:6px;font-size:12px}
@@ -184,3 +183,4 @@ body.mm-flash-loss::after{content:"";position:fixed;inset:0;background:rgba(255,
 .ags.compact .ag-b > div{display:flex;justify-content:space-between;gap:6px;font-size:11.5px}
 .ags.compact .ag-b > div > span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ag-tag{font-style:normal;font-size:9.5px;border:1px solid rgba(255,43,214,.5);border-radius:3px;padding:0 3px;margin-right:3px;color:#ff9be8}
+

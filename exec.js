@@ -110,7 +110,7 @@ async function sim(o, getC, c0, tEv, meta = {}){ const m = { t: Date.now(), mode
     const tSend = now(); m.ev2sent = tSend - t0; m.via = "SIM";
     await new Promise(r => setTimeout(r, Math.max(150, +C.simDelay || 600))); /* modelled network + slot time to landing */
     const c = getC() || c0; if (!c) throw new Error("curve verisi yok");
-    const fee = (o.prio || 0) + BASE_FEE;
+    const fee = (o.prio || 0) + BASE_FEE + (C.jito ? (+C.tip || 0) + BASE_FEE : 0); /* v7.7: same costs as GERÇEK incl. the Jito tip tx when Jito is on */
     let res; if (o.action === "buy"){ if (c.complete) throw new Error("curve tamamlandı (AMM) — SIM alım yok");
       const tok = buyOut(c, o.sol), exp = c0 ? buyOut(c0, o.sol) : tok;
       if (tok < exp*(1 - o.slip/100)) throw new Error(`kayma aşıldı (beklenen ${exp.toFixed(0)}, dolum ${tok.toFixed(0)})`);
