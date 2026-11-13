@@ -3,6 +3,9 @@
    Modes: SIM (default · paper money, real live market data, realistic fills/fees/latency, nothing sent) and GERÇEK (BOT CÜZDANI, real SOL).
    Auto is OFF after every page load unless "otomatik başlat" is on. Manual trades always need ONAYLA; Grok can only suggest.
    v7.4: optional compounding (entry = equity × %), animated USD goal bar, win/loss effects, simplified MEME layout.
+   v7.9: measured funnel (see FN) → moderately looser selection: dev buy ≥ 0.05 SOL (was 0.15), dev share ≤ 20 % (16), momentum ≥ −5 % (3),
+         wait 15 s, pump score ≥ 55 (65), ≥ 3 buyers (5), top wallet ≤ 55 % (45). Wallet-level backfill now runs for every scored candidate
+         (the logs stream misses the first trades). Hard rug rejects (dev sold, bundle, rug ≥ 70, net ≤ 0, dd > 25 %) and all risk limits unchanged.
    v7.7: SIM = GERÇEK. SIM runs the exact same settings and code path as GERÇEK (filters, pump score, exits, compounding, maxTrade, budget,
          dailyLoss, maxPos, half size after a loss, pause after 2 losses, same fee buffer, Jito tip when on); only the fills are virtual
          (+ the v7.5 haircut). "Serbest mod" removed (one-time migration turns it off); SIM start = BOT CÜZDANI SOL balance (public RPC, no unlock) or 0.212 SOL.
@@ -24,8 +27,8 @@ const T = () => window.TRADE, W = () => window.WALLET, X = () => window.EXEC;
 const K = "neon.meme";
 const SIM_FALLBACK = 0.212; /* last known real BOT CÜZDANI balance — used when the wallet balance cannot be read */
 const DEF = { mode: "SIM", dep: SIM_FALLBACK, autoStart: false, base: 0.05, maxTrade: 0.1, budget: 0.5, dailyLoss: 0.25, maxPos: 3, tp: 250, sl: 25, trail: 20, holdMin: 15, slip: 20, prio: 0.0005,
-  w: { on: true, minInit: 0.15, minMcap: 15, maxMcap: 120, needSoc: true, maxDev: 16, maxRisk: 58, waitSec: 20, minMom: 3 },
-  sc: { on: true, min: 65, minBuyers: 5, maxTop: 45, learn: true },
+  w: { on: true, minInit: 0.05, minMcap: 15, maxMcap: 120, needSoc: true, maxDev: 20, maxRisk: 58, waitSec: 15, minMom: -5 },
+  sc: { on: true, min: 55, minBuyers: 3, maxTop: 55, learn: true },
   x: { on: true, early: 12, earlySec: 20, momUp: 5, momFail: 8, be: 20, beLock: 1, ptp: 40, ptpPct: 50, trailHi: 12, trailSw: 100, rev: true, revSec: 6, flatMin: 4, flatBand: 10, simHc: true },
   cp: { on: true, minSrc: 0.3, maxMcap: 300, follow: true, cool: 120, max10: 3, sizeMode: "fixed", ratio: 0.1 },
   rules: { half: true, pause2: true, pauseMin: 60, upHigh: true },
@@ -34,7 +37,7 @@ const DEF = { mode: "SIM", dep: SIM_FALLBACK, autoStart: false, base: 0.05, maxT
   fx: { sound: true },
   goal: { targetUsd: 2000, startUsd: null, startAt: null },
   };
-const deep = (a, b) => { const o = Object.assign({}, a); for (const k in b) o[k] = (a[k] && typeof a[k] === "object" && !Array.isArray(a[k])) ? Object.assign({}, a[k], b[k] || {}) : b[k]; return o; };
+const deep = (a, b) => { const o = JSON.parse(JSON.stringify(a)); /* v7.9: never alias DEF's nested objects (migrations used to mutate DEF) */ for (const k in b) o[k] = (a[k] && typeof a[k] === "object" && !Array.isArray(a[k])) ? Object.assign({}, a[k], b[k] || {}) : b[k]; return o; };
 let C = deep(DEF, (() => { try { return JSON.parse(localStorage.getItem(K) || "{}"); } catch(e){ return {}; } })());
 const save = () => localStorage.setItem(K, JSON.stringify(C));
 /* v7.3: one-time move to the looser watcher filters (risk limits untouched) */
@@ -47,6 +50,8 @@ let MIG77 = false;
 if ((C.fv|0) < 4){ delete C.freeSim; C.dep = SIM_FALLBACK; C.fv = 4; MIG77 = true;
   try { ["neon.sim", "neon.meme.risk.sim", "neon.meme.eq.sim", "neon.meme.eq.sim.mk"].forEach(k => localStorage.removeItem(k)); localStorage.setItem("neon.meme.sim77", "1"); save(); } catch(e){} }
 delete C.freeSim;
+/* v7.9: one-time — looser selection from the measured funnel. Only these selection keys change; risk limits, exits and rug rejects are untouched. */
+if ((C.fv|0) < 5){ Object.assign(C.w, { minInit: 0.05, maxDev: 20, minMom: -5, waitSec: 15 }); Object.assign(C.sc, { min: 55, minBuyers: 3, maxTop: 55 }); C.fv = 5; try { save(); } catch(e){} }
 const RANGE = { base: [0.001, 1], maxTrade: [0.001, 2], budget: [0.01, 20], dailyLoss: [0.005, 20], maxPos: [1, 10], tp: [5, 1000], sl: [3, 90], trail: [0, 80], holdMin: [1, 1440], slip: [1, 50], prio: [0, 0.005], dep: [0.01, 10000],
   "w.minInit": [0, 50], "w.minMcap": [0, 1000], "w.maxMcap": [1, 5000], "w.maxDev": [0, 100], "w.maxRisk": [0, 100], "w.waitSec": [3, 600], "w.minMom": [-50, 500],
   "cp.minSrc": [0, 100], "cp.maxMcap": [1, 10000], "cp.cool": [0, 3600], "cp.max10": [1, 50], "cp.ratio": [0.001, 10], "rules.pauseMin": [1, 1440], "gk.timeout": [500, 15000],
@@ -82,6 +87,9 @@ const TLK = "neon.meme.tl"; let TL = (() => { try { return JSON.parse(localStora
 function tl(kind, html, cls, extra){ TL.unshift(Object.assign({ t: Date.now(), k: kind, h: html, c: cls || "", m: C.mode }, extra || {})); if (TL.length > 250) TL.length = 250; localStorage.setItem(TLK, JSON.stringify(TL)); paintTLQ(); }
 const TAPE = []; function tape(x){ TAPE.unshift(Object.assign({ t: Date.now() }, x)); if (TAPE.length > 60) TAPE.length = 60; paintTapeQ(); }
 /* ------------------------- runtime state ------------------------- */
+const FN = {}; /* v7.9 funnel: stage → reason → count (since page load) */
+const fnKey = r => String(r).replace(/\([^)]*\)/g, "").replace(/[0-9][0-9.,]*/g, "#").replace(/\s+/g, " ").trim();
+const fnInc = (st, r) => { const o = FN[st] = FN[st] || {}; const k = r === undefined ? "_" : fnKey(r); o[k] = (o[k] || 0) + 1; };
 const ST = { scN: 0, scPass: 0, scores: [], wb: 0, wbLive: 0, on: false, wake: null, cands: new Map(), mons: new Map(), busy: new Set(), buying: 0, curves: new Map(), cpLog: new Map(), lastCopy: null, seen: 0, passed: 0, entered: 0, wLast: "", gk: { n: 0, yes: 0, no: 0, to: 0, last: null }, real: { bal: null, at: 0 }, orb: 0 };
 const isReal = () => C.mode === "GERÇEK";
 /* v7.7: no unrestricted SIM any more — SIM obeys every GERÇEK limit. Kept as a constant so the shared sizing/risk code has one path. */
@@ -302,7 +310,7 @@ function check(mint){ const mo = ST.mons.get(mint), p = posGet(mint); if (!mo) r
    Learning ("öğrenme", sc.learn): while OTO is off the same pipeline runs and a pass is logged as "ALIRDI" and followed for 5 min — nothing is bought. */
 function onNew(t){ ST.seen++; if (!C.w.on) return; const learn = !ST.on && !!(C.sc && C.sc.learn); if (!ST.on && !learn) return; if (RMT()) return; const w = C.w;
   const why = t.pool !== "pump" ? "havuz pump değil" : t.devSol < w.minInit ? "dev alımı düşük" : t.mcap && t.mcap < w.minMcap ? "mcap düşük" : t.devPct > w.maxDev ? "dev payı yüksek" : t.serial > 1 ? "seri yaratıcı" : t.copy > 0 ? "kopya isim" : null;
-  if (why){ ST.wLast = `${t.symbol}: ${why}`; return; } if (ST.cands.size >= 6 || (!learn && !simFree() && posList().length >= C.maxPos)) return;
+  fnInc("seen"); if (why){ fnInc("pre", why); ST.wLast = `${t.symbol}: ${why}`; return; } if (ST.cands.size >= 6){ fnInc("pre", "aday kuyruğu dolu"); return; } if (!learn && !simFree() && posList().length >= C.maxPos){ fnInc("pre", "max pozisyon dolu"); return; }
   ST.passed++; const c = { t, at: Date.now(), first: null, hi: 0, last: null, odd: false, learn };
   const e = watchCurve(t.mint, t.curve); c.e = e; ST.cands.set(t.mint, c); PUMP.metaQ(t, true); FLOW.track(t.mint, t.curve, t.creator, t.at, t.mcap0); try { AGT() && AGT().onCand(t); } catch(e){}
   ST.wLast = `${t.symbol}: ${w.waitSec} sn akış izleniyor`; tl("watch", `👁 İZLEYİCİ: <b>${esc(t.symbol)}</b> ilk filtreyi geçti · mcap ${fmt(t.mcap, 1)} · dev %${fmt(t.devPct, 1)}`, "dim");
@@ -316,15 +324,17 @@ async function decide(mint, again){ const c = ST.cands.get(mint); if (!c) return
   if (w.needSoc && !t.meta && !t.metaErr && !again){ setTimeout(() => decide(mint, true), 4000); return; }
   PUMP.risk(t); const mom = c.first && c.last ? (c.last/c.first - 1)*100 : null, soc = t.meta && (t.meta.tw || t.meta.tg || t.meta.web);
   const no = c.first === null ? "canlı curve verisi yok" : c.odd ? "standart dışı curve" : w.needSoc && !soc ? "sosyal yok" : t.risk > w.maxRisk ? `risk ${t.risk} > ${w.maxRisk}` : mom < w.minMom ? `momentum ${pc(mom)} < %${w.minMom}` : c.last > w.maxMcap ? `mcap ${fmt(c.last, 1)} > ${w.maxMcap}` : c.e.c && c.e.c.complete ? "curve tamamlandı" : c.last < c.hi*0.8 ? "zirveden %20+ düştü" : null;
-  if (no){ ST.wLast = `${t.symbol}: elendi (${no})`; return done(`✖ ${esc(t.symbol)} elendi: ${esc(no)}`); }
-  let fl = FLOW.flow(mint); if (C.sc && C.sc.on && fl && fl.src === "curve"){ await FLOW.backfill(mint); if (!ST.cands.has(mint)) return; fl = FLOW.flow(mint); } let sc = null;
+  if (no){ fnInc("dec", no); ST.wLast = `${t.symbol}: elendi (${no})`; return done(`✖ ${esc(t.symbol)} elendi: ${esc(no)}`); }
+  /* v7.9: always backfill wallet-level trades before scoring — the logs stream only starts after the (paced) subscribe and often misses the first buys */
+  let fl = FLOW.flow(mint); const nBuyers = f => f && f.src === "logs" ? new Set(f.trades.filter(x => x.isBuy && x.user).map(x => x.user)).size : 0;
+  if (C.sc && C.sc.on && fl && (fl.src === "curve" || nBuyers(fl) < (C.sc.minBuyers || 0) + 3)){ fnInc("bf", fl.src); await FLOW.backfill(mint, 4500); if (!ST.cands.has(mint)) return; fl = FLOW.flow(mint); } let sc = null;
   /* v7.6 agents: smart-money bonus, rug risk hard reject, optional entry-trigger gate (they only veto or boost — they never buy) */
   const fl0 = fl || { trades: [], mcaps: [] }; let g = null; try { g = AGT() ? AGT().gate(t, c, fl0, SCORE.metrics(fl0, Date.now())) : null; } catch(e){ g = null; }
-  if (!(C.sc && C.sc.on) && g && g.reject){ ST.wLast = `${t.symbol}: ${g.reject}`; return done(`✖ ${esc(t.symbol)} elendi: <b>${esc(g.reject)}</b>`, "dim", "score"); }
+  if (!(C.sc && C.sc.on) && g && g.reject){ fnInc("dec", g.reject); ST.wLast = `${t.symbol}: ${g.reject}`; return done(`✖ ${esc(t.symbol)} elendi: <b>${esc(g.reject)}</b>`, "dim", "score"); }
   if (C.sc && C.sc.on){ sc = SCORE.pumpScore(fl0, Date.now(), Object.assign({}, C.sc, { bonus: g ? g.bonus : 0 })); if (g){ if (g.reject && !sc.hard){ sc.hard = g.reject; sc.pass = false; } sc.why.push(...g.notes); sc.rug = g.rug; sc.entry = g.entry; }
     try { AGT() && AGT().onScored(t, c, sc); } catch(e){} ST.scN++; ST.scores.push(sc.score); if (ST.scores.length > 500) ST.scores.shift();
-    if (!sc.pass){ ST.wLast = `${t.symbol}: skor ${sc.score}${sc.hard ? " · " + sc.hard : ""}`; return done(`✖ ${esc(t.symbol)} ${scShort(sc)} → ${sc.hard ? "<b>" + esc(sc.hard) + "</b>" : `eşik ${sc.min} altı`}${c.learn ? " · öğrenme" : ""}`, "dim", "score"); }
-    ST.scPass++; }
+    fnInc("src", fl0 && fl0.src ? fl0.src : "yok"); if (!sc.pass){ if (sc.hard) fnInc("hard", sc.hard); else fnInc("low", sc.score >= 55 ? "55–64" : sc.score >= 45 ? "45–54" : "<45"); ST.wLast = `${t.symbol}: skor ${sc.score}${sc.hard ? " · " + sc.hard : ""}`; return done(`✖ ${esc(t.symbol)} ${scShort(sc)} → ${sc.hard ? "<b>" + esc(sc.hard) + "</b>" : `eşik ${sc.min} altı`}${c.learn ? " · öğrenme" : ""}`, "dim", "score"); }
+    ST.scPass++; fnInc("pass"); }
   if (c.learn || !ST.on){ const rec = wouldBuy(t, c, sc, mom); done(); return rec; }
   const tEv = performance.now(); clearInterval(c.iv); ST.cands.delete(mint);
   if (sc) tl("score", `✔ ${esc(t.symbol)} ${scShort(sc)} → AL`, "up");
@@ -596,7 +606,11 @@ function scStats(){ const b = [0, 0, 0, 0, 0]; for (const x of ST.scores) b[Math
 function paintScore(){ const el = $("#mm-sc-st"); if (!el) return; const s = scStats(), R_ = (k, v, c) => `<div><span>${k}</span><b class="${c || ""}">${v}</b></div>`;
   el.innerHTML = R_("skorlanan / geçen", `${s.n} / ${s.pass}`) + R_("skor 0·20·40·60·80+", s.buckets.join(" · ")) + R_("ALIRDI (5 dk izlenen)", `${s.wb} (${s.wbDone})`)
     + R_("ALIRDI ort. zirve / 5 dk", s.avgHi === null ? "—" : pc(s.avgHi) + " / " + pc(s.avg5)) + R_("ALIRDI +%40'a değen", s.wbDone ? s.hit40 + "/" + s.wbDone : "—")
+    + R_("huni (bu oturum)", fnLine()) + R_("en çok eleyen", fnTop() || "—")
     + R_("akış", s.flow.open ? `● ${s.flow.subs}/${s.flow.want} abone · ${s.flow.trades} işlem · yedek ${s.flow.bf}` : "—", s.flow.open ? "up" : "dim"); }
+const fnSum = o => o ? Object.values(o).reduce((a, x) => a + x, 0) : 0;
+function fnLine(){ const seen = fnSum(FN.seen), pre = seen - fnSum(FN.pre), sc = fnSum(FN.src); return `${seen} görülen → ${pre} ilk filtre → ${sc} skor → ${fnSum(FN.pass)} geçen`; }
+function fnTop(){ const all = []; for (const st of ["pre", "dec", "hard", "low"]) for (const [k, v] of Object.entries(FN[st] || {})) all.push([st === "low" ? "skor " + k : k, v]); return all.sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${esc(k)} ${v}`).join(" · "); }
 const srcLab = s => s === "copy" ? "KOPYA" : s === "watcher" ? "İZLEYİCİ" : s === "grok" ? "GROK" : "ELLE";
 function paintPos(){ const el = $("#mm-pos"); if (!el) return; const L = posList(); $("#mm-posn").textContent = L.length ? `${L.length} · ${fmt(deployed(), 3)} SOL` : "";
   el.innerHTML = L.length ? L.map(p => { const mo = ST.mons.get(p.mint) || {}, pn = mo.pnl, has = isFinite(pn) && pn !== null; return `<div class="pos ${!has ? "" : pn >= 0 ? "l" : "s"}"><b>${esc(p.sym)} <span class="pill ${p.src === "copy" ? "m" : "y"}">${srcLab(p.src)}</span>${p.wallet ? ` <small>${esc(lab(p.wallet))}</small>` : ""}</b>
@@ -722,6 +736,6 @@ if (isReal()){ realBal(true); X().keepWarm(true); }
 if (MIG77 || localStorage.getItem("neon.meme.sim77") === "1") setTimeout(() => mig77Sync().catch(() => {}), 1200);
 if (C.autoStart){ if (!isReal()) setTimeout(() => arm(true).then(ok => ok && NOTIFY.toast("otomatik başlat: OTO açıldı (SIM)", "good")), 1500);
   else { const iv = setInterval(() => { if (ST.on || !C.autoStart || C.mode !== "GERÇEK"){ clearInterval(iv); return; } if (W().unlocked()){ clearInterval(iv); arm(true).then(ok => ok && NOTIFY.ping("bad", "otomatik başlat: GERÇEK OTO açıldı")); } }, 2000); } }
-return { realWalletSol, simToReal, sizeWhy, sizeExplain, FLOW, scStats, get WB(){ return WB; }, check, exit, xcfg, snap, ctl, get remote(){ return RMT(); }, get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, endPause, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList, sizeCalc, riskSize, riskCheck, riskOnClose, simFree, fxWin, fxBuy, fxLoss, goalRestart };
+return { funnel: () => JSON.parse(JSON.stringify(FN)), realWalletSol, simToReal, sizeWhy, sizeExplain, FLOW, scStats, get WB(){ return WB; }, check, exit, xcfg, snap, ctl, get remote(){ return RMT(); }, get on(){ return ST.on; }, get mode(){ return C.mode; }, arm, stop, endPause, kill, manual, context, applySuggestion, gateInfo, render, paint, fab, get C(){ return C; }, setP, _ST: ST, get SIM(){ return SIM; }, get R(){ return R; }, equity, posList, sizeCalc, riskSize, riskCheck, riskOnClose, simFree, fxWin, fxBuy, fxLoss, goalRestart };
 })();
 window.MEME = MEME;
