@@ -3,6 +3,8 @@
    Modes: SIM (default · paper money, real live market data, realistic fills/fees/latency, nothing sent) and GERÇEK (BOT CÜZDANI, real SOL).
    Auto is OFF after every page load unless "otomatik başlat" is on. Manual trades always need ONAYLA; Grok can only suggest.
    v7.4: optional compounding (entry = equity × %), animated USD goal bar, win/loss effects, simplified MEME layout.
+   v7.10: Onur's choice "İkisini de gevşet" — dev-buy-0 launches allowed (minInit 0) and social links no longer required (needSoc off).
+          One-time migration; serial-creator filter, hard rejects, rug ≥ 70, risk limits and exits unchanged.
    v7.9: measured funnel (see FN) → moderately looser selection: dev buy ≥ 0.05 SOL (was 0.15), dev share ≤ 20 % (16), momentum ≥ −5 % (3),
          wait 15 s, pump score ≥ 55 (65), ≥ 3 buyers (5), top wallet ≤ 55 % (45). Wallet-level backfill now runs for every scored candidate
          (the logs stream misses the first trades). Hard rug rejects (dev sold, bundle, rug ≥ 70, net ≤ 0, dd > 25 %) and all risk limits unchanged.
@@ -27,7 +29,7 @@ const T = () => window.TRADE, W = () => window.WALLET, X = () => window.EXEC;
 const K = "neon.meme";
 const SIM_FALLBACK = 0.212; /* last known real BOT CÜZDANI balance — used when the wallet balance cannot be read */
 const DEF = { mode: "SIM", dep: SIM_FALLBACK, autoStart: false, base: 0.05, maxTrade: 0.1, budget: 0.5, dailyLoss: 0.25, maxPos: 3, tp: 250, sl: 25, trail: 20, holdMin: 15, slip: 20, prio: 0.0005,
-  w: { on: true, minInit: 0.05, minMcap: 15, maxMcap: 120, needSoc: true, maxDev: 20, maxRisk: 58, waitSec: 15, minMom: -5 },
+  w: { on: true, minInit: 0, minMcap: 15, maxMcap: 120, needSoc: false, maxDev: 20, maxRisk: 58, waitSec: 15, minMom: -5 },
   sc: { on: true, min: 55, minBuyers: 3, maxTop: 55, learn: true },
   x: { on: true, early: 12, earlySec: 20, momUp: 5, momFail: 8, be: 20, beLock: 1, ptp: 40, ptpPct: 50, trailHi: 12, trailSw: 100, rev: true, revSec: 6, flatMin: 4, flatBand: 10, simHc: true },
   cp: { on: true, minSrc: 0.3, maxMcap: 300, follow: true, cool: 120, max10: 3, sizeMode: "fixed", ratio: 0.1 },
@@ -52,6 +54,8 @@ if ((C.fv|0) < 4){ delete C.freeSim; C.dep = SIM_FALLBACK; C.fv = 4; MIG77 = tru
 delete C.freeSim;
 /* v7.9: one-time — looser selection from the measured funnel. Only these selection keys change; risk limits, exits and rug rejects are untouched. */
 if ((C.fv|0) < 5){ Object.assign(C.w, { minInit: 0.05, maxDev: 20, minMom: -5, waitSec: 15 }); Object.assign(C.sc, { min: 55, minBuyers: 3, maxTop: 55 }); C.fv = 5; try { save(); } catch(e){} }
+/* v7.10: one-time — allow dev-buy-0 launches + drop the social-links requirement (Onur: "İkisini de gevşet"). Later edits are kept. */
+if ((C.fv|0) < 6){ C.w.minInit = 0; C.w.needSoc = false; C.fv = 6; try { save(); } catch(e){} }
 const RANGE = { base: [0.001, 1], maxTrade: [0.001, 2], budget: [0.01, 20], dailyLoss: [0.005, 20], maxPos: [1, 10], tp: [5, 1000], sl: [3, 90], trail: [0, 80], holdMin: [1, 1440], slip: [1, 50], prio: [0, 0.005], dep: [0.01, 10000],
   "w.minInit": [0, 50], "w.minMcap": [0, 1000], "w.maxMcap": [1, 5000], "w.maxDev": [0, 100], "w.maxRisk": [0, 100], "w.waitSec": [3, 600], "w.minMom": [-50, 500],
   "cp.minSrc": [0, 100], "cp.maxMcap": [1, 10000], "cp.cool": [0, 3600], "cp.max10": [1, 50], "cp.ratio": [0.001, 10], "rules.pauseMin": [1, 1440], "gk.timeout": [500, 15000],
